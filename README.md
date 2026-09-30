@@ -36,3 +36,22 @@ Keyed by TfL line id, e.g.:
   }
 }
 ```
+
+## Lookup CLI
+
+Query the generated data without writing any code:
+
+```bash
+# Show every stop on a line, by id or name
+python3 lookup.py line 367
+python3 lookup.py line victoria
+
+# List all lines, optionally filtered by mode
+python3 lookup.py line --mode tram
+
+# Find every line serving a stop/station (partial, case-insensitive match)
+python3 lookup.py stop "Elmers End"
+
+# Find lines that directly connect two stops
+python3 lookup.py between "Elmers End" "Beckenham"
+```
