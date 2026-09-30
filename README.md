@@ -55,3 +55,48 @@ python3 lookup.py stop "Elmers End"
 # Find lines that directly connect two stops
 python3 lookup.py between "Elmers End" "Beckenham"
 ```
+
+## Bus Explorer (Milestone 0.1)
+
+A small Flask app that answers "if I travel on this bus, what interesting
+things could I get off and explore?" for a given London bus route. Finds
+candidate places from OpenStreetMap within a chosen walking distance of the
+route's stops, categorises them, writes a short description (from the
+place's linked Wikipedia article where available, or its OSM tags
+otherwise), and lets you record a permanent Visited/Favourite/note status
+per place — independent of which route you found it from.
+
+Lives in `bus_explorer/`. See `docs/bus-explorer-spec.md` for the full
+product specification this implements.
+
+### Setup
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### Run
+
+```bash
+source .venv/bin/activate
+python3 -m bus_explorer.app
+```
+
+Then open http://127.0.0.1:5055/, enter a route number (e.g. `54`) and area
+(`London`), and choose a maximum walk distance. The first exploration of a
+route can take up to a minute (fetching stop coordinates from TfL and
+candidate places from OpenStreetMap); results are cached in
+`data/bus_explorer.db` (SQLite, not checked into git) for instant reloads
+afterwards.
+
+### Notes
+
+- Only London bus routes are supported in this milestone (TfL Unified API).
+- Set `TFL_APP_KEY` (free, https://api-portal.tfl.gov.uk/) to raise TfL's
+  anonymous rate limit if you hit `429` errors exploring several routes in
+  a row.
+- No AI drafting yet (spec section 9) — descriptions are pulled directly
+  from OpenStreetMap tags and Wikipedia/Wikidata, so every word is
+  traceable to a real source.

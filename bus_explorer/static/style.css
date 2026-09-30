@@ -1,0 +1,56 @@
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  margin: 0;
+  background: #f7f6f3;
+  color: #1a1a1a;
+}
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 24px;
+  background: #1f2937;
+  color: white;
+}
+.topbar a { color: white; text-decoration: none; }
+.topbar nav a { margin-left: 16px; }
+.brand { font-weight: bold; font-size: 1.1em; }
+
+main { max-width: 720px; margin: 0 auto; padding: 24px; }
+
+.card {
+  background: white;
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+}
+
+.center-form { max-width: 420px; margin: 40px auto; text-align: center; }
+.center-form h1 { font-size: 1.4em; }
+.center-form form { display: flex; flex-direction: column; gap: 14px; text-align: left; }
+.center-form label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; font-size: 0.9em; }
+.center-form input, .center-form select { padding: 8px; font-size: 1em; border-radius: 6px; border: 1px solid #ccc; }
+.center-form button {
+  padding: 10px; font-size: 1em; border-radius: 6px; border: none;
+  background: #1f2937; color: white; cursor: pointer;
+}
+.hint { color: #666; font-size: 0.85em; }
+.error { color: #b00020; font-weight: 600; }
+
+.tabs { display: flex; gap: 16px; margin-bottom: 16px; }
+.tabs a { text-decoration: none; color: #555; padding-bottom: 4px; }
+.tabs a.active { color: #1a1a1a; border-bottom: 2px solid #1f2937; font-weight: 600; }
+
+.result h2 { margin: 0 0 4px 0; font-size: 1.1em; }
+.result h2 a { text-decoration: none; color: #1a1a1a; }
+.result .meta, .result .category, .result .distance { font-size: 0.85em; color: #666; }
+.result .why { margin: 8px 0; }
+.status { font-size: 0.9em; margin-top: 8px; }
+.more-info { font-size: 0.85em; }
+
+.filters { display: flex; gap: 16px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+.filters label { display: flex; flex-direction: column; font-size: 0.85em; gap: 4px; }
+
+textarea { width: 100%; min-height: 60px; font-family: inherit; }

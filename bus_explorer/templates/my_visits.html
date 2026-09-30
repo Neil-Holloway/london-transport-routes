@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}My discoveries — Bus Explorer{% endblock %}
+{% block content %}
+<h1>My discoveries</h1>
+<p class="hint">{{ visits|length }} places visited</p>
+
+<form method="get" class="filters">
+  <label>
+    Category
+    <select name="category" onchange="this.form.submit()">
+      <option value="">All</option>
+      {% for c in categories %}
+      <option value="{{ c }}" {{ 'selected' if c == selected_category }}>{{ c }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    Bus route
+    <select name="route" onchange="this.form.submit()">
+      <option value="">All</option>
+      {% for r in routes %}
+      <option value="{{ r }}" {{ 'selected' if r == selected_route }}>{{ r|upper }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    <input type="checkbox" name="favourites" value="1" {{ 'checked' if favourites_only }} onchange="this.form.submit()">
+    Favourites only
+  </label>
+</form>
+
+<div class="result-list">
+  {% for v in visits %}
+  <div class="card result">
+    <h2><a href="{{ url_for('attraction_detail', attraction_id=v.id) }}">{{ v.name }}</a></h2>
+    <div class="category">{{ v.category }}</div>
+    {% if v.date_visited %}<div class="meta">Visited {{ v.date_visited }}</div>{% endif %}
+    {% if v.favourite %}<div class="meta">★ Favourite</div>{% endif %}
+    {% if v.note %}<p class="why">{{ v.note }}</p>{% endif %}
+  </div>
+  {% else %}
+  <p>No visits recorded yet.</p>
+  {% endfor %}
+</div>
+{% endblock %}

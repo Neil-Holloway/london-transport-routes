@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Where shall I explore? — Bus Explorer{% endblock %}
+{% block content %}
+<div class="card center-form">
+  <h1>Where shall I explore?</h1>
+
+  {% if error %}
+    <p class="error">{{ error }}</p>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('explore') }}">
+    <label>
+      Bus route
+      <input type="text" name="route_number" placeholder="54" required autofocus>
+    </label>
+
+    <label>
+      Area
+      <input type="text" name="area" placeholder="London" value="London">
+    </label>
+
+    <label>
+      Maximum walk from route
+      <select name="max_walk_m">
+        <option value="250">250 m</option>
+        <option value="500">500 m</option>
+        <option value="1000" selected>1 km</option>
+        <option value="2000">2 km</option>
+      </select>
+    </label>
+
+    <button type="submit">Explore this route</button>
+  </form>
+  <p class="hint">Fetching candidate places can take up to a minute the first time a route is explored.</p>
+</div>
+{% endblock %}

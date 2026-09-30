@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Route {{ line_id }} — Bus Explorer{% endblock %}
+{% block content %}
+<h1>{{ line_id|upper }}{% if results %} — {{ results[0].nearest_stop_name }} ...{% endif %}</h1>
+
+<div class="tabs">
+  <a class="{{ 'active' if view == 'highlights' }}" href="{{ url_for('route_results', line_id=line_id, walk=walk_m, view='highlights') }}">Highlights</a>
+  <a class="{{ 'active' if view == 'all' }}" href="{{ url_for('route_results', line_id=line_id, walk=walk_m, view='all') }}">All discoveries</a>
+  <a class="{{ 'active' if view == 'unvisited' }}" href="{{ url_for('route_results', line_id=line_id, walk=walk_m, view='unvisited') }}">Unvisited only</a>
+</div>
+
+{% if not results %}
+  <p class="hint">No discoveries found within the selected walking distance. Try a larger radius from the home page.</p>
+{% endif %}
+
+<div class="result-list">
+  {% for r in results %}
+  <div class="card result">
+    <h2><a href="{{ url_for('attraction_detail', attraction_id=r.id) }}">{{ r.name }}</a></h2>
+    <div class="meta">{{ r.nearest_stop_name }}</div>
+    <div class="category">{{ r.category }}</div>
+    <div class="distance">{{ r.distance_m | round | int }} m / approximately {{ r.walk_minutes }} minutes from the bus</div>
+    <p class="why">{{ r.why }}</p>
+    <div class="status">
+      {% if r.visited %}✓ Visited{% else %}○ Not visited{% endif %}
+      {% if r.favourite %}★{% endif %}
+    </div>
+    <a class="more-info" href="{{ url_for('attraction_detail', attraction_id=r.id) }}">More information</a>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

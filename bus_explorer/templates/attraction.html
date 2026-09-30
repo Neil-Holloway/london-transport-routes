@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}{{ a.name }} — Bus Explorer{% endblock %}
+{% block content %}
+<h1>{{ a.name }}</h1>
+<div class="category">{{ a.category }}</div>
+
+<section>
+  <h2>Why it's interesting</h2>
+  <p>{{ a.why }}</p>
+</section>
+
+<section>
+  <h2>History</h2>
+  <p>{{ a.history }}</p>
+</section>
+
+{% if a.source_url %}
+<section>
+  <h2>Sources</h2>
+  <p><a href="{{ a.source_url }}" target="_blank" rel="noopener">{{ a.source_url }}</a></p>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Your visit</h2>
+  <form method="post" action="{{ url_for('mark_visit', attraction_id=a.id) }}">
+    <label>
+      <input type="checkbox" name="visited" {{ 'checked' if a.visited }}>
+      Visited
+    </label>
+    <label>
+      Date visited (optional)
+      <input type="date" name="date_visited" value="{{ a.date_visited or '' }}">
+    </label>
+    <label>
+      My note (optional)
+      <textarea name="note">{{ a.note or '' }}</textarea>
+    </label>
+    <label>
+      <input type="checkbox" name="favourite" {{ 'checked' if a.favourite }}>
+      ★ Favourite
+    </label>
+    <button type="submit">Save</button>
+  </form>
+</section>
+
+{% if nearby %}
+<section>
+  <h2>Nearby</h2>
+  <ul>
+    {% for n in nearby %}
+    <li><a href="{{ url_for('attraction_detail', attraction_id=n.id) }}">{{ n.name }}</a> — {{ n.category }} ({{ n.distance_m | round | int }} m)</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}
