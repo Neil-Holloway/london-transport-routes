@@ -57,6 +57,26 @@ def _wikipedia_tag_from_wikidata(wikidata_id):
     return None
 
 
+def _wikidata_description(wikidata_id):
+    """Short English label/description straight from Wikidata, for places
+    that have a Wikidata item but no Wikipedia article (common for small
+    squares, parks etc. - commons-only sitelinks, no prose written yet).
+    """
+    url = (
+        "https://www.wikidata.org/w/api.php?action=wbgetentities"
+        f"&ids={urllib.parse.quote(wikidata_id)}&props=labels|descriptions&languages=en&format=json"
+    )
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+        entity = data.get("entities", {}).get(wikidata_id, {})
+        desc = entity.get("descriptions", {}).get("en", {}).get("value")
+        return desc
+    except (OSError, ValueError):
+        return None
+
+
 def enrich(tags, category):
     """Returns {why, history, source_url}."""
     name = tags.get("name", "This place")
@@ -77,7 +97,8 @@ def enrich(tags, category):
             "source_url": wiki_summary["url"],
         }
 
-    # Fallback: build something honest from whatever OSM tags exist.
+    # Fallback: build something honest from whatever OSM tags exist, plus a
+    # short Wikidata description if there's a linked item without full prose.
     details = []
     if tags.get("inscription"):
         details.append(f'Inscription: "{tags["inscription"]}"')
@@ -86,8 +107,22 @@ def enrich(tags, category):
     if tags.get("start_date"):
         details.append(f"Dates from {tags['start_date']}.")
 
-    why = f"{name} is tagged in OpenStreetMap as {category.lower()}."
-    history = " ".join(details) if details else "No further details are available yet from open data sources."
+    wikidata_desc = _wikidata_description(tags["wikidata"]) if tags.get("wikidata") else None
+
+    if wikidata_desc:
+        why = f"{name} — {wikidata_desc}."
+    else:
+        why = f"{name} is tagged in OpenStreetMap as {category.lower()}."
+
+    if details:
+        history = " ".join(details)
+    elif not wikidata_desc:
+        # Only show the "nothing more known" line when we genuinely have
+        # nothing - if wikidata_desc filled in `why`, repeating a generic
+        # "no further details" line right below it reads as broken, not honest.
+        history = "No further details are available yet from open data sources."
+    else:
+        history = None
 
     source_url = None
     if tags.get("wikidata"):

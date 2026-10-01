@@ -117,8 +117,37 @@ def walk_plan(line_id):
     by_id = {r["id"]: r for r in route_results}
     selected = [by_id[i] for i in ids if i in by_id]
 
+    for stop in selected:
+        if not stop.get("address"):
+            # Same lazy reverse-geocode as the attraction detail page, so a
+            # printed walk pack always has a navigable address per stop.
+            address = geocode.reverse_geocode(stop["lat"], stop["lon"])
+            if address:
+                db.set_address(stop["id"], address)
+                stop["address"] = address
+
     plan, totals = build_plan(selected)
-    return render_template("walk_plan.html", line_id=line_id, plan=plan, totals=totals)
+
+    maps_url = None
+    if len(plan) >= 2:
+        coords = [f"{s['lat']},{s['lon']}" for s in plan]
+        origin, destination = coords[0], coords[-1]
+        waypoints = "|".join(coords[1:-1])
+        maps_url = (
+            "https://www.google.com/maps/dir/?api=1"
+            f"&origin={origin}&destination={destination}&travelmode=walking"
+        )
+        if waypoints:
+            maps_url += f"&waypoints={waypoints}"
+    elif len(plan) == 1:
+        maps_url = (
+            "https://www.google.com/maps/search/?api=1"
+            f"&query={plan[0]['lat']},{plan[0]['lon']}"
+        )
+
+    return render_template(
+        "walk_plan.html", line_id=line_id, plan=plan, totals=totals, maps_url=maps_url
+    )
 
 
 @app.route("/attraction/<path:attraction_id>")

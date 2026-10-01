@@ -76,6 +76,8 @@ textarea { width: 100%; min-height: 60px; font-family: inherit; }
 .walk-stop h2 { margin: 0 0 4px 0; font-size: 1.1em; }
 .walk-stop .leg { font-size: 0.85em; color: #1f6f3f; font-weight: 600; margin-bottom: 6px; }
 .walk-stop .history { font-size: 0.9em; color: #333; }
+.walk-stop .coords { font-size: 0.8em; color: #777; font-family: monospace; }
+.leg a { margin-left: 6px; }
 
 @media print {
   .topbar, .no-print { display: none !important; }

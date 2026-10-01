@@ -15,6 +15,9 @@
     <strong>{{ totals.stop_count }}</strong> stop{{ 's' if totals.stop_count != 1 }},
     approximately <strong>{{ totals.total_distance_m }} m</strong> of walking
     (around <strong>{{ totals.total_walk_minutes }} minutes</strong>), not counting time at each stop.
+    {% if maps_url %}
+      <div class="no-print"><a href="{{ maps_url }}" target="_blank" rel="noopener">Open whole walk in Google Maps</a></div>
+    {% endif %}
   </div>
 
   <ol class="walk-plan-list">
@@ -22,11 +25,18 @@
     <li class="card walk-stop">
       <h2>{{ stop.stop_number }}. {{ stop.name }}</h2>
       {% if loop.first %}
-        <div class="leg">Starting point — nearest bus stop: {{ stop.nearest_stop_name }}</div>
+        <div class="leg">
+          Starting point — nearest bus stop: {{ stop.nearest_stop_name }}
+          <a class="no-print" href="https://www.google.com/maps/search/?api=1&query={{ stop.lat }},{{ stop.lon }}" target="_blank" rel="noopener">— get directions</a>
+        </div>
       {% else %}
-        <div class="leg">{{ stop.distance_from_prev_m | round | int }} m / approximately {{ stop.walk_minutes_from_prev }} minutes on foot from the previous stop</div>
+        <div class="leg">
+          {{ stop.distance_from_prev_m | round | int }} m / approximately {{ stop.walk_minutes_from_prev }} minutes on foot from the previous stop
+          <a class="no-print" href="https://www.google.com/maps/dir/?api=1&origin={{ plan[loop.index0 - 1].lat }},{{ plan[loop.index0 - 1].lon }}&destination={{ stop.lat }},{{ stop.lon }}&travelmode=walking" target="_blank" rel="noopener">— get directions</a>
+        </div>
       {% endif %}
       {% if stop.address %}<div class="address">{{ stop.address }}</div>{% endif %}
+      <div class="coords print-only">{{ "%.5f"|format(stop.lat) }}, {{ "%.5f"|format(stop.lon) }}</div>
       <div class="category">{{ stop.category }}</div>
       {% if stop.why %}<p class="why">{{ stop.why }}</p>{% endif %}
       {% if stop.history %}<p class="history">{{ stop.history }}</p>{% endif %}
