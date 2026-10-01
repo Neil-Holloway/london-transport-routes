@@ -17,7 +17,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", categories=CATEGORIES)
 
 
 @app.route("/explore", methods=["POST"])
@@ -25,13 +25,17 @@ def explore():
     route_number = request.form.get("route_number", "").strip()
     area = request.form.get("area", "").strip()
     max_walk_m = int(request.form.get("max_walk_m", 1000))
+    selected_categories = request.form.getlist("categories") or CATEGORIES
 
     if not route_number:
-        return render_template("index.html", error="Please enter a bus route number.")
+        return render_template(
+            "index.html", categories=CATEGORIES, error="Please enter a bus route number."
+        )
 
     if area and "london" not in area.lower():
         return render_template(
             "index.html",
+            categories=CATEGORIES,
             error="Only London bus routes are supported in this version.",
         )
 
@@ -41,29 +45,41 @@ def explore():
     if cached_walk_m is not None and cached_walk_m >= max_walk_m:
         # Already explored at this radius (or wider) - skip the slow
         # TfL + OpenStreetMap pipeline and use what's cached.
-        return redirect(url_for("route_results", line_id=line_id, walk=max_walk_m))
+        return redirect(
+            url_for("route_results", line_id=line_id, walk=max_walk_m, categories=selected_categories)
+        )
 
     try:
         result = explore_route(route_number, max_walk_m)
     except RouteNotFoundError as e:
-        return render_template("index.html", error=str(e))
+        return render_template("index.html", categories=CATEGORIES, error=str(e))
     except RuntimeError as e:
         return render_template(
             "index.html",
+            categories=CATEGORIES,
             error=f"Could not fetch candidate places right now ({e}). Please try again shortly.",
         )
 
-    return redirect(url_for("route_results", line_id=result["line_id"], walk=max_walk_m))
+    return redirect(
+        url_for(
+            "route_results",
+            line_id=result["line_id"],
+            walk=max_walk_m,
+            categories=selected_categories,
+        )
+    )
 
 
 @app.route("/route/<line_id>")
 def route_results(line_id):
     walk_m = request.args.get("walk", type=int)
     view = request.args.get("view", "all")  # highlights | all | unvisited
+    categories = request.args.getlist("categories") or CATEGORIES
 
     results = db.get_route_results(line_id)
     if walk_m:
         results = [r for r in results if r["distance_m"] <= walk_m]
+    results = [r for r in results if r["category"] in categories]
 
     if view == "highlights":
         results = [r for r in results if r["category"] in (
@@ -80,6 +96,7 @@ def route_results(line_id):
         results=results,
         view=view,
         walk_m=walk_m,
+        categories=categories,
     )
 
 

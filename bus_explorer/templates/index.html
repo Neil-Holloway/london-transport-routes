@@ -29,6 +29,18 @@
       </select>
     </label>
 
+    <fieldset class="category-filter">
+      <legend>Types of place to include</legend>
+      <div class="category-grid">
+        {% for cat in categories %}
+        <label class="category-option">
+          <input type="checkbox" name="categories" value="{{ cat }}" checked>
+          {{ cat }}
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+
     <button type="submit">Explore this route</button>
   </form>
   <p class="hint">Fetching candidate places can take up to a minute the first time a route is explored.</p>

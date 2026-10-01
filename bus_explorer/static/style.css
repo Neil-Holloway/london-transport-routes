@@ -27,7 +27,7 @@ main { max-width: 720px; margin: 0 auto; padding: 24px; }
   box-shadow: 0 1px 3px rgba(0,0,0,0.08);
 }
 
-.center-form { max-width: 420px; margin: 40px auto; text-align: center; }
+.center-form { max-width: 520px; margin: 40px auto; text-align: center; }
 .center-form h1 { font-size: 1.4em; }
 .center-form form { display: flex; flex-direction: column; gap: 14px; text-align: left; }
 .center-form label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; font-size: 0.9em; }
@@ -37,6 +37,11 @@ main { max-width: 720px; margin: 0 auto; padding: 24px; }
   background: #1f2937; color: white; cursor: pointer;
 }
 .hint { color: #666; font-size: 0.85em; }
+
+.category-filter { border: 1px solid #ddd; border-radius: 6px; padding: 10px 12px; }
+.category-filter legend { font-weight: 600; font-size: 0.9em; padding: 0 4px; }
+.category-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin-top: 6px; }
+.category-option { display: flex !important; flex-direction: row !important; align-items: center; gap: 6px; font-weight: normal !important; font-size: 0.85em; }
 .error { color: #b00020; font-weight: 600; }
 
 .tabs { display: flex; gap: 16px; margin-bottom: 16px; }

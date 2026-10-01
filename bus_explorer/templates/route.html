@@ -4,9 +4,9 @@
 <h1>{{ line_id|upper }}{% if results %} — {{ results[0].nearest_stop_name }} ...{% endif %}</h1>
 
 <div class="tabs">
-  <a class="{{ 'active' if view == 'highlights' }}" href="{{ url_for('route_results', line_id=line_id, walk=walk_m, view='highlights') }}">Highlights</a>
-  <a class="{{ 'active' if view == 'all' }}" href="{{ url_for('route_results', line_id=line_id, walk=walk_m, view='all') }}">All discoveries</a>
-  <a class="{{ 'active' if view == 'unvisited' }}" href="{{ url_for('route_results', line_id=line_id, walk=walk_m, view='unvisited') }}">Unvisited only</a>
+  <a class="{{ 'active' if view == 'highlights' }}" href="{{ url_for('route_results', line_id=line_id, walk=walk_m, view='highlights', categories=categories) }}">Highlights</a>
+  <a class="{{ 'active' if view == 'all' }}" href="{{ url_for('route_results', line_id=line_id, walk=walk_m, view='all', categories=categories) }}">All discoveries</a>
+  <a class="{{ 'active' if view == 'unvisited' }}" href="{{ url_for('route_results', line_id=line_id, walk=walk_m, view='unvisited', categories=categories) }}">Unvisited only</a>
 </div>
 
 {% if not results %}
