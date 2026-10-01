@@ -35,7 +35,7 @@
         {% if r.visited %}✓ Visited{% else %}○ Not visited{% endif %}
         {% if r.favourite %}★{% endif %}
       </div>
-      {% if r.history and r.history != r.why %}
+      {% if r.has_more_info %}
       <a class="more-info" href="{{ url_for('attraction_detail', attraction_id=r.id) }}">More information</a>
       {% endif %}
     </div>

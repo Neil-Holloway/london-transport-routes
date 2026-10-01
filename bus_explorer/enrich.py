@@ -15,6 +15,8 @@ import urllib.request
 
 USER_AGENT = "BusExplorer/0.1 (https://github.com/Georege-Holloway/london-transport-routes)"
 
+NO_FURTHER_DETAILS = "No further details are available yet from open data sources."
+
 
 def _fetch_wikipedia_summary(wikipedia_tag):
     """wikipedia_tag looks like 'en:Charlton House, London'."""
@@ -156,7 +158,7 @@ def enrich(tags, category, lat=None, lon=None):
         # Only show the "nothing more known" line when we genuinely have
         # nothing - if wikidata_desc filled in `why`, repeating a generic
         # "no further details" line right below it reads as broken, not honest.
-        history = "No further details are available yet from open data sources."
+        history = NO_FURTHER_DETAILS
     else:
         history = None
 
