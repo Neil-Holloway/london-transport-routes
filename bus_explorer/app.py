@@ -15,6 +15,7 @@ from .tfl_client import RouteNotFoundError
 from .walkplan import build_plan
 
 app = Flask(__name__)
+db.init_db()
 
 
 @app.route("/")
@@ -207,7 +208,6 @@ def my_visits():
 
 
 def main():
-    db.init_db()
     app.run(debug=True, port=5055)
 
 
