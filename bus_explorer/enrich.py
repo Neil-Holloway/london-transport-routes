@@ -30,7 +30,7 @@ def _fetch_wikipedia_summary(wikipedia_tag):
         page_url = (data.get("content_urls", {}).get("desktop", {}) or {}).get("page")
         if extract:
             return {"extract": extract, "url": page_url or f"https://{lang}.wikipedia.org/wiki/{title}"}
-    except (urllib.error.HTTPError, urllib.error.URLError, ValueError):
+    except (OSError, ValueError):
         return None
     return None
 
@@ -52,7 +52,7 @@ def _wikipedia_tag_from_wikidata(wikidata_id):
         title = entity.get("sitelinks", {}).get("enwiki", {}).get("title")
         if title:
             return f"en:{title}"
-    except (urllib.error.HTTPError, urllib.error.URLError, ValueError):
+    except (OSError, ValueError):
         return None
     return None
 

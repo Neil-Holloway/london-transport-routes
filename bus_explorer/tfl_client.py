@@ -39,7 +39,7 @@ def _fetch_json(path, retries=5):
                 retry_after = e.headers.get("Retry-After")
                 time.sleep(float(retry_after) if retry_after else 2 * attempt)
                 continue
-        except (urllib.error.URLError, TimeoutError) as e:
+        except OSError as e:
             last_error = e
         if attempt < retries:
             time.sleep(0.5 * attempt)  # backoff - TfL rate-limits bursts of requests

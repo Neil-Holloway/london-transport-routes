@@ -62,7 +62,11 @@ def find_candidates(min_lat, min_lon, max_lat, max_lon, retries_per_mirror=1):
                 with urllib.request.urlopen(req, timeout=60) as resp:
                     data = json.loads(resp.read())
                 return _normalise_elements(data.get("elements", []))
-            except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as e:
+            except OSError as e:
+                # Covers HTTPError/URLError plus socket.timeout, which on
+                # Python <3.10 is a distinct class from TimeoutError and
+                # would otherwise escape uncaught, skipping remaining
+                # mirrors/retries and crashing the request.
                 last_error = e
                 time.sleep(2)
     raise RuntimeError(f"Overpass query failed on all mirrors: {last_error}")

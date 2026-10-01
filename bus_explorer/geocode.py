@@ -46,7 +46,7 @@ def reverse_geocode(lat, lon):
         req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read())
-    except (urllib.error.HTTPError, urllib.error.URLError, ValueError):
+    except (OSError, ValueError):
         return None
 
     addr = data.get("address", {})
