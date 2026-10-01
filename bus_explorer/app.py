@@ -11,6 +11,7 @@ from . import db, geocode
 from .categorise import CATEGORIES
 from .pipeline import explore_route
 from .tfl_client import RouteNotFoundError
+from .walkplan import build_plan
 
 app = Flask(__name__)
 
@@ -98,6 +99,26 @@ def route_results(line_id):
         walk_m=walk_m,
         categories=categories,
     )
+
+
+@app.route("/walk-plan", methods=["POST"])
+def create_walk_plan():
+    line_id = request.form.get("line_id", "")
+    attraction_ids = request.form.getlist("attraction_ids")
+    if not line_id or not attraction_ids:
+        return redirect(url_for("route_results", line_id=line_id))
+    return redirect(url_for("walk_plan", line_id=line_id, ids=attraction_ids))
+
+
+@app.route("/route/<line_id>/walk-plan")
+def walk_plan(line_id):
+    ids = request.args.getlist("ids")
+    route_results = db.get_route_results(line_id)
+    by_id = {r["id"]: r for r in route_results}
+    selected = [by_id[i] for i in ids if i in by_id]
+
+    plan, totals = build_plan(selected)
+    return render_template("walk_plan.html", line_id=line_id, plan=plan, totals=totals)
 
 
 @app.route("/attraction/<path:attraction_id>")

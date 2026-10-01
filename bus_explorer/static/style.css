@@ -62,3 +62,25 @@ main { max-width: 720px; margin: 0 auto; padding: 24px; }
 textarea { width: 100%; min-height: 60px; font-family: inherit; }
 
 #attraction-map { height: 260px; border-radius: 10px; margin: 12px 0 20px; }
+
+.walk-plan-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.walk-plan-bar button { padding: 8px 14px; border-radius: 6px; border: none; background: #1f2937; color: white; cursor: pointer; }
+.walk-select { display: block; font-size: 0.85em; font-weight: 600; margin-bottom: 6px; }
+
+.walk-plan-header { display: flex; justify-content: space-between; align-items: center; }
+.walk-plan-header button { padding: 8px 14px; border-radius: 6px; border: none; background: #1f2937; color: white; cursor: pointer; }
+.print-only { display: none; }
+.walk-summary { font-size: 0.95em; }
+.walk-plan-list { list-style: none; margin: 0; padding: 0; }
+.walk-stop { margin-bottom: 16px; }
+.walk-stop h2 { margin: 0 0 4px 0; font-size: 1.1em; }
+.walk-stop .leg { font-size: 0.85em; color: #1f6f3f; font-weight: 600; margin-bottom: 6px; }
+.walk-stop .history { font-size: 0.9em; color: #333; }
+
+@media print {
+  .topbar, .no-print { display: none !important; }
+  .print-only { display: block; }
+  main { max-width: 100%; }
+  .card { box-shadow: none; border: 1px solid #ccc; }
+  .walk-stop { page-break-inside: avoid; }
+}

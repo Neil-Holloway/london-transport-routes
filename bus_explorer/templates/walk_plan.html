@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Walking plan — Route {{ line_id|upper }} — Bus Explorer{% endblock %}
+{% block content %}
+
+<div class="walk-plan-header no-print">
+  <h1>Walking plan — Route {{ line_id|upper }}</h1>
+  <button type="button" onclick="window.print()">Print this pack</button>
+</div>
+<h1 class="print-only">Walking plan — Route {{ line_id|upper }}</h1>
+
+{% if not plan %}
+  <p class="hint">No places selected. Go back to the route results and tick the places you'd like to visit.</p>
+{% else %}
+  <div class="card walk-summary">
+    <strong>{{ totals.stop_count }}</strong> stop{{ 's' if totals.stop_count != 1 }},
+    approximately <strong>{{ totals.total_distance_m }} m</strong> of walking
+    (around <strong>{{ totals.total_walk_minutes }} minutes</strong>), not counting time at each stop.
+  </div>
+
+  <ol class="walk-plan-list">
+    {% for stop in plan %}
+    <li class="card walk-stop">
+      <h2>{{ stop.stop_number }}. {{ stop.name }}</h2>
+      {% if loop.first %}
+        <div class="leg">Starting point — nearest bus stop: {{ stop.nearest_stop_name }}</div>
+      {% else %}
+        <div class="leg">{{ stop.distance_from_prev_m | round | int }} m / approximately {{ stop.walk_minutes_from_prev }} minutes on foot from the previous stop</div>
+      {% endif %}
+      {% if stop.address %}<div class="address">{{ stop.address }}</div>{% endif %}
+      <div class="category">{{ stop.category }}</div>
+      {% if stop.why %}<p class="why">{{ stop.why }}</p>{% endif %}
+      {% if stop.history %}<p class="history">{{ stop.history }}</p>{% endif %}
+      {% if stop.source_url %}<p class="source no-print"><a href="{{ stop.source_url }}" target="_blank" rel="noopener">Source</a></p>{% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+{% endif %}
+{% endblock %}
