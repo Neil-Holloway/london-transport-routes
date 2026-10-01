@@ -62,14 +62,27 @@ def _normalise_name(name):
     return "".join(ch.lower() for ch in name if ch.isalnum())
 
 
+def _is_linear_feature(cand):
+    """Rivers, canals etc. are mapped in OSM as many separate way segments
+    that can be far apart along a route, unlike a single point-like place
+    accidentally tagged twice nearby. For these we dedupe by name alone,
+    ignoring distance, since a bus route running alongside "River X" for
+    a kilometre shouldn't surface a dozen identical "River X" cards.
+    """
+    tags = cand.get("tags", {})
+    return bool(tags.get("waterway")) or cand.get("category") == "Rivers, canals and waterways"
+
+
 def dedupe(candidates):
     """candidates: list of dicts with 'name', 'lat', 'lon', 'score',
-    'intrinsic_score', etc.
+    'intrinsic_score', 'tags', 'category', etc.
 
     Keeps the candidate with the highest intrinsic (route-independent) score
-    among near-duplicates (same normalised name within DEDUP_RADIUS_M of each
-    other), so the canonical id for a given real-world place is stable no
-    matter which route surfaced it.
+    among near-duplicates: same normalised name, and (for ordinary point-like
+    places) within DEDUP_RADIUS_M of each other. Linear features such as
+    rivers/canals are merged by name alone regardless of distance, since a
+    single real-world river is typically split into many OSM way segments
+    running the length of a route.
     """
     kept = []
     for cand in sorted(candidates, key=lambda c: -c["intrinsic_score"]):
@@ -78,6 +91,9 @@ def dedupe(candidates):
         for existing in kept:
             if _normalise_name(existing["name"]) != cand_norm:
                 continue
+            if _is_linear_feature(cand) and _is_linear_feature(existing):
+                is_dup = True
+                break
             if haversine_m(cand["lat"], cand["lon"], existing["lat"], existing["lon"]) <= DEDUP_RADIUS_M:
                 is_dup = True
                 break

@@ -9,7 +9,7 @@
 6. Persist attractions + their per-route placement in SQLite (db).
 """
 
-from . import categorise, db, enrich, overpass_client, scoring, tfl_client
+from . import categorise, db, enrich, geocode, overpass_client, scoring, tfl_client
 
 WALK_SPEED_M_PER_MIN = 80  # ~4.8 km/h, a relaxed walking pace
 
@@ -81,10 +81,12 @@ def explore_route(route_number, max_walk_m):
     deduped = scoring.dedupe(enriched_candidates)
     deduped.sort(key=lambda c: c["nearest_stop_index"])
 
+    db.clear_route_attractions(line_id)
     results = []
     for cand in deduped:
         attraction_id = f"osm:{cand['osm_type']}:{cand['osm_id']}"
         text = enrich.enrich(cand["tags"], cand["category"])
+        address = geocode.address_from_tags(cand["tags"])
 
         db.upsert_attraction(
             {
@@ -96,6 +98,7 @@ def explore_route(route_number, max_walk_m):
                 "why": text["why"],
                 "history": text["history"],
                 "source_url": text["source_url"],
+                "address": address,
                 "osm_type": cand["osm_type"],
                 "osm_id": cand["osm_id"],
             }

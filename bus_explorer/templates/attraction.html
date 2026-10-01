@@ -1,8 +1,17 @@
 {% extends "base.html" %}
 {% block title %}{{ a.name }} — Bus Explorer{% endblock %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+{% endblock %}
+
 {% block content %}
 <h1>{{ a.name }}</h1>
 <div class="category">{{ a.category }}</div>
+{% if a.address %}<div class="address">{{ a.address }}</div>{% endif %}
+
+<div id="attraction-map" data-lat="{{ a.lat }}" data-lon="{{ a.lon }}" data-name="{{ a.name }}"></div>
 
 <section>
   <h2>Why it's interesting</h2>
@@ -54,4 +63,22 @@
   </ul>
 </section>
 {% endif %}
+{% endblock %}
+
+{% block scripts_extra %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+  (function () {
+    var el = document.getElementById('attraction-map');
+    var lat = parseFloat(el.dataset.lat);
+    var lon = parseFloat(el.dataset.lon);
+    var map = L.map(el).setView([lat, lon], 17);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 19
+    }).addTo(map);
+    L.marker([lat, lon]).addTo(map).bindPopup(el.dataset.name);
+  })();
+</script>
 {% endblock %}

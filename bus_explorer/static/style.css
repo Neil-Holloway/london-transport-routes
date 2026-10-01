@@ -45,7 +45,8 @@ main { max-width: 720px; margin: 0 auto; padding: 24px; }
 
 .result h2 { margin: 0 0 4px 0; font-size: 1.1em; }
 .result h2 a { text-decoration: none; color: #1a1a1a; }
-.result .meta, .result .category, .result .distance { font-size: 0.85em; color: #666; }
+.result .meta, .result .category, .result .distance, .result .address { font-size: 0.85em; color: #666; }
+.address { font-size: 0.9em; color: #555; margin-bottom: 8px; }
 .result .why { margin: 8px 0; }
 .status { font-size: 0.9em; margin-top: 8px; }
 .more-info { font-size: 0.85em; }
@@ -54,3 +55,5 @@ main { max-width: 720px; margin: 0 auto; padding: 24px; }
 .filters label { display: flex; flex-direction: column; font-size: 0.85em; gap: 4px; }
 
 textarea { width: 100%; min-height: 60px; font-family: inherit; }
+
+#attraction-map { height: 260px; border-radius: 10px; margin: 12px 0 20px; }

@@ -7,7 +7,7 @@ Run with:
 
 from flask import Flask, redirect, render_template, request, url_for
 
-from . import db
+from . import db, geocode
 from .categorise import CATEGORIES
 from .pipeline import explore_route
 from .tfl_client import RouteNotFoundError
@@ -34,6 +34,14 @@ def explore():
             "index.html",
             error="Only London bus routes are supported in this version.",
         )
+
+    line_id = route_number.strip().lower()
+    cached_walk_m = db.max_explored_walk_m(line_id)
+
+    if cached_walk_m is not None and cached_walk_m >= max_walk_m:
+        # Already explored at this radius (or wider) - skip the slow
+        # TfL + OpenStreetMap pipeline and use what's cached.
+        return redirect(url_for("route_results", line_id=line_id, walk=max_walk_m))
 
     try:
         result = explore_route(route_number, max_walk_m)
@@ -80,6 +88,17 @@ def attraction_detail(attraction_id):
     attraction = db.get_attraction(attraction_id)
     if not attraction:
         return "Attraction not found", 404
+
+    if not attraction.get("address"):
+        # No addr:* tags on the OSM element itself - reverse-geocode once
+        # and cache the result, rather than looking this up for every
+        # candidate during route exploration (Nominatim rate-limits to
+        # 1 request/second).
+        address = geocode.reverse_geocode(attraction["lat"], attraction["lon"])
+        if address:
+            db.set_address(attraction_id, address)
+            attraction["address"] = address
+
     nearby = db.get_nearby(attraction_id)
     return render_template("attraction.html", a=attraction, nearby=nearby)
 

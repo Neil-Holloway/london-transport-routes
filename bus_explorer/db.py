@@ -45,6 +45,7 @@ def init_db():
                 why TEXT,
                 history TEXT,
                 source_url TEXT,
+                address TEXT,
                 osm_type TEXT,
                 osm_id INTEGER,
                 created_at TEXT DEFAULT (datetime('now'))
@@ -73,21 +74,43 @@ def init_db():
             );
             """
         )
+        # Migration for databases created before the 'address' column existed.
+        existing_cols = {row["name"] for row in conn.execute("PRAGMA table_info(attractions)")}
+        if "address" not in existing_cols:
+            conn.execute("ALTER TABLE attractions ADD COLUMN address TEXT")
 
 
 def upsert_attraction(attraction):
+    attraction = {"address": None, **attraction}
     with get_conn() as conn:
         conn.execute(
             """
-            INSERT INTO attractions (id, name, category, lat, lon, why, history, source_url, osm_type, osm_id)
-            VALUES (:id, :name, :category, :lat, :lon, :why, :history, :source_url, :osm_type, :osm_id)
+            INSERT INTO attractions (id, name, category, lat, lon, why, history, source_url, address, osm_type, osm_id)
+            VALUES (:id, :name, :category, :lat, :lon, :why, :history, :source_url, :address, :osm_type, :osm_id)
             ON CONFLICT(id) DO UPDATE SET
                 name=excluded.name, category=excluded.category, lat=excluded.lat, lon=excluded.lon,
                 why=excluded.why, history=excluded.history, source_url=excluded.source_url,
+                address=COALESCE(excluded.address, attractions.address),
                 osm_type=excluded.osm_type, osm_id=excluded.osm_id
             """,
             attraction,
         )
+
+
+def set_address(attraction_id, address):
+    with get_conn() as conn:
+        conn.execute("UPDATE attractions SET address = ? WHERE id = ?", (address, attraction_id))
+
+
+def clear_route_attractions(line_id):
+    """Remove all cached route_attractions rows for a line before
+    re-exploring it, so stale entries (e.g. from an old dedup pass) don't
+    linger alongside freshly computed ones. The underlying attractions rows
+    and any visit data are untouched, since attractions can be shared across
+    routes.
+    """
+    with get_conn() as conn:
+        conn.execute("DELETE FROM route_attractions WHERE line_id = ?", (line_id,))
 
 
 def upsert_route_attraction(row):
@@ -207,3 +230,17 @@ def get_routes_explored():
     with get_conn() as conn:
         rows = conn.execute("SELECT DISTINCT line_id FROM route_attractions").fetchall()
         return [r["line_id"] for r in rows]
+
+
+def max_explored_walk_m(line_id):
+    """The largest max_walk_m the pipeline has already been run at for this
+    route, or None if it has never been explored. Used to skip re-running
+    the (slow) TfL + OpenStreetMap pipeline when the cached results already
+    cover the requested walk distance.
+    """
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT MAX(max_walk_m) AS m FROM route_attractions WHERE line_id = ?",
+            (line_id,),
+        ).fetchone()
+        return row["m"] if row and row["m"] is not None else None

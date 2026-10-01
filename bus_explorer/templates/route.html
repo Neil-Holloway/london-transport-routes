@@ -17,6 +17,7 @@
   {% for r in results %}
   <div class="card result">
     <h2><a href="{{ url_for('attraction_detail', attraction_id=r.id) }}">{{ r.name }}</a></h2>
+    {% if r.address %}<div class="address">{{ r.address }}</div>{% endif %}
     <div class="meta">{{ r.nearest_stop_name }}</div>
     <div class="category">{{ r.category }}</div>
     <div class="distance">{{ r.distance_m | round | int }} m / approximately {{ r.walk_minutes }} minutes from the bus</div>
