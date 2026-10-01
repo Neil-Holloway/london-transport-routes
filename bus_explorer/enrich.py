@@ -57,6 +57,40 @@ def _wikipedia_tag_from_wikidata(wikidata_id):
     return None
 
 
+def _normalise(s):
+    return "".join(ch.lower() for ch in s if ch.isalnum())
+
+
+def _wikipedia_geosearch(lat, lon, name, radius_m=75):
+    """Last-resort lookup for OSM elements with no wikipedia/wikidata tag at
+    all: search for a real Wikipedia article within a small radius of the
+    exact coordinates. Only accepted if the article title plausibly matches
+    the OSM name, since places can share a name with a completely unrelated
+    landmark elsewhere (e.g. "Jubilee Gardens" on the South Bank vs. a small
+    local park near Crystal Palace), and a tight radius alone isn't enough -
+    a nearby unrelated building could be closer than the real match.
+    """
+    url = (
+        "https://en.wikipedia.org/w/api.php?action=query&list=geosearch"
+        f"&gscoord={lat}|{lon}&gsradius={radius_m}&gslimit=5&format=json"
+    )
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+    except (OSError, ValueError):
+        return None
+
+    target = _normalise(name)
+    if not target:
+        return None
+    for result in data.get("query", {}).get("geosearch", []):
+        title_norm = _normalise(result["title"])
+        if target in title_norm or title_norm in target:
+            return f"en:{result['title']}"
+    return None
+
+
 def _wikidata_description(wikidata_id):
     """Short English label/description straight from Wikidata, for places
     that have a Wikidata item but no Wikipedia article (common for small
@@ -77,12 +111,14 @@ def _wikidata_description(wikidata_id):
         return None
 
 
-def enrich(tags, category):
+def enrich(tags, category, lat=None, lon=None):
     """Returns {why, history, source_url}."""
     name = tags.get("name", "This place")
     wikipedia = tags.get("wikipedia")
     if not wikipedia and tags.get("wikidata"):
         wikipedia = _wikipedia_tag_from_wikidata(tags["wikidata"])
+    if not wikipedia and lat is not None and lon is not None:
+        wikipedia = _wikipedia_geosearch(lat, lon, name)
     wiki_summary = _fetch_wikipedia_summary(wikipedia) if wikipedia else None
 
     if wiki_summary:

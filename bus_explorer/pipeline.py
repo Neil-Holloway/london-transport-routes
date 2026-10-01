@@ -85,7 +85,7 @@ def explore_route(route_number, max_walk_m):
     results = []
     for cand in deduped:
         attraction_id = f"osm:{cand['osm_type']}:{cand['osm_id']}"
-        text = enrich.enrich(cand["tags"], cand["category"])
+        text = enrich.enrich(cand["tags"], cand["category"], cand["lat"], cand["lon"])
         address = geocode.address_from_tags(cand["tags"])
 
         db.upsert_attraction(
