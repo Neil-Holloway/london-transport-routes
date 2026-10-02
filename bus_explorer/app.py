@@ -190,8 +190,15 @@ def debug_overpass():
 
     query = "[out:json][timeout:10];node(51.5,-0.1,51.501,-0.099);out;"
     body = urllib.parse.urlencode({"data": query}).encode()
+    candidate_mirrors = overpass_client.MIRRORS + [
+        "https://overpass.osm.ch/api/interpreter",
+        "https://overpass.openstreetmap.ru/api/interpreter",
+        "https://overpass.nchc.org.tw/api/interpreter",
+        "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+        "https://overpass.osm.vi-di.fr/api/interpreter",
+    ]
     lines = []
-    for mirror in overpass_client.MIRRORS:
+    for mirror in candidate_mirrors:
         t0 = time.time()
         try:
             req = urllib.request.Request(
