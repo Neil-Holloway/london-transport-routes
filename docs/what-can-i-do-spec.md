@@ -151,6 +151,8 @@ Same departure-point/single-bus-journey mechanism as §4, but the simplest possi
 
 **Candidate finding.** Not OSM — there's no reliable, standard OSM tag for parkrun locations. The source is parkrun's own public events feed, `https://images.parkrun.com/events.json`, which lists every event with its name and coordinates in one request — no per-event page scraping needed. Candidates are found the same way as any other search in this family: fetch the feed once, then filter to events within walking distance of stops along each reachable single-bus journey, reusing the same distance-filtering approach already used elsewhere (haversine on lat/lon). This is the same "single authoritative source" principle already used for Wikidata descriptions, rather than a web search — and it's a proven approach, already implemented for a different, unrelated project (a personal fitness-tracking tool) that uses this exact feed to find parkrun events near London.
 
+**No personal completion tracking.** This search does not identify whether you've personally run a given parkrun — that's a job for dedicated parkrun/fitness tracking apps, not this one. The only "visited" status is the same self-reported Visited/Not Visited toggle every other result gets (§9), not a ground-truth check against actual run results.
+
 ## 12. First development milestone
 
 **What Can I Do 0.1**
