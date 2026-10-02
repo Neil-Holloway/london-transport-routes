@@ -1,10 +1,14 @@
 """Postgres (Supabase) persistence for Bus Explorer.
 
 Design note (spec section 6, "crucial rule"): visited status, notes and
-favourites are stored keyed by attraction_id alone, in a table separate from
-route_attractions. The same attraction discovered from two different bus
-routes shares one row here, so marking it visited on one route makes it show
-as visited on the other automatically.
+favourites are stored keyed by (attraction_id, visitor_name), in a table
+separate from route_attractions. The same attraction discovered from two
+different bus routes shares one row here per visitor, so marking it visited
+on one route makes it show as visited on the other automatically - but only
+for that visitor. There is no login/password - visitor_name is just a
+nickname a person picks once (see app.py's cookie-based identification), so
+this is trust-based separation for friends sharing one deployment, not real
+per-user security.
 """
 
 import os
@@ -65,12 +69,14 @@ def init_db():
                 );
 
                 CREATE TABLE IF NOT EXISTS visits (
-                    attraction_id TEXT PRIMARY KEY REFERENCES attractions(id),
+                    attraction_id TEXT NOT NULL REFERENCES attractions(id),
+                    visitor_name TEXT NOT NULL,
                     visited INTEGER NOT NULL DEFAULT 0,
                     date_visited TEXT,
                     note TEXT,
                     favourite INTEGER NOT NULL DEFAULT 0,
-                    updated_at TIMESTAMPTZ DEFAULT now()
+                    updated_at TIMESTAMPTZ DEFAULT now(),
+                    PRIMARY KEY (attraction_id, visitor_name)
                 );
                 """
             )
@@ -84,6 +90,25 @@ def init_db():
             existing_cols = {row["column_name"] for row in cur.fetchall()}
             if "address" not in existing_cols:
                 cur.execute("ALTER TABLE attractions ADD COLUMN address TEXT")
+
+            # Migration for databases created before per-visitor tracking:
+            # visits used to be keyed by attraction_id alone (one shared
+            # visited/favourite per place for everyone). Add visitor_name,
+            # attribute all pre-existing rows to "Neil" (this app's first
+            # user, before nicknames existed), and widen the primary key.
+            cur.execute(
+                """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'visits'
+                """
+            )
+            visit_cols = {row["column_name"] for row in cur.fetchall()}
+            if "visitor_name" not in visit_cols:
+                cur.execute("ALTER TABLE visits ADD COLUMN visitor_name TEXT")
+                cur.execute("UPDATE visits SET visitor_name = 'Neil' WHERE visitor_name IS NULL")
+                cur.execute("ALTER TABLE visits ALTER COLUMN visitor_name SET NOT NULL")
+                cur.execute("ALTER TABLE visits DROP CONSTRAINT visits_pkey")
+                cur.execute("ALTER TABLE visits ADD PRIMARY KEY (attraction_id, visitor_name)")
 
 
 def upsert_attraction(attraction):
@@ -141,7 +166,7 @@ def upsert_route_attraction(row):
             )
 
 
-def get_route_results(line_id):
+def get_route_results(line_id, visitor_name):
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -152,16 +177,16 @@ def get_route_results(line_id):
                        COALESCE(v.favourite, 0) AS favourite
                 FROM route_attractions ra
                 JOIN attractions a ON a.id = ra.attraction_id
-                LEFT JOIN visits v ON v.attraction_id = a.id
+                LEFT JOIN visits v ON v.attraction_id = a.id AND v.visitor_name = %s
                 WHERE ra.line_id = %s
                 ORDER BY ra.sequence_index ASC
                 """,
-                (line_id,),
+                (visitor_name, line_id),
             )
             return [dict(r) for r in cur.fetchall()]
 
 
-def get_attraction(attraction_id):
+def get_attraction(attraction_id, visitor_name):
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -169,17 +194,20 @@ def get_attraction(attraction_id):
                 SELECT a.*, COALESCE(v.visited, 0) AS visited, v.date_visited, v.note,
                        COALESCE(v.favourite, 0) AS favourite
                 FROM attractions a
-                LEFT JOIN visits v ON v.attraction_id = a.id
+                LEFT JOIN visits v ON v.attraction_id = a.id AND v.visitor_name = %s
                 WHERE a.id = %s
                 """,
-                (attraction_id,),
+                (visitor_name, attraction_id),
             )
             row = cur.fetchone()
             return dict(row) if row else None
 
 
 def get_nearby(attraction_id, radius_m=1000, limit=10):
-    attraction = get_attraction(attraction_id)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT lat, lon FROM attractions WHERE id = %s", (attraction_id,))
+            attraction = cur.fetchone()
     if not attraction:
         return []
     with get_conn() as conn:
@@ -202,29 +230,29 @@ def get_nearby(attraction_id, radius_m=1000, limit=10):
     return nearby[:limit]
 
 
-def set_visit(attraction_id, visited, date_visited=None, note=None, favourite=False):
+def set_visit(attraction_id, visitor_name, visited, date_visited=None, note=None, favourite=False):
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO visits (attraction_id, visited, date_visited, note, favourite, updated_at)
-                VALUES (%s, %s, %s, %s, %s, now())
-                ON CONFLICT (attraction_id) DO UPDATE SET
+                INSERT INTO visits (attraction_id, visitor_name, visited, date_visited, note, favourite, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, now())
+                ON CONFLICT (attraction_id, visitor_name) DO UPDATE SET
                     visited=excluded.visited, date_visited=excluded.date_visited,
                     note=excluded.note, favourite=excluded.favourite, updated_at=excluded.updated_at
                 """,
-                (attraction_id, int(visited), date_visited, note, int(favourite)),
+                (attraction_id, visitor_name, int(visited), date_visited, note, int(favourite)),
             )
 
 
-def get_all_visits(category=None, favourites_only=False, line_id=None):
+def get_all_visits(visitor_name, category=None, favourites_only=False, line_id=None):
     query = """
         SELECT DISTINCT a.*, v.visited, v.date_visited, v.note, v.favourite
         FROM attractions a
         JOIN visits v ON v.attraction_id = a.id
     """
-    conditions = ["v.visited = 1"]
-    params = []
+    conditions = ["v.visited = 1", "v.visitor_name = %s"]
+    params = [visitor_name]
     if line_id:
         query += " JOIN route_attractions ra ON ra.attraction_id = a.id"
         conditions.append("ra.line_id = %s")

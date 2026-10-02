@@ -13,6 +13,11 @@
     <nav>
       <a href="{{ url_for('index') }}">Explore</a>
       <a href="{{ url_for('my_visits') }}">My Visits</a>
+      {% if g.visitor_name %}
+        <span class="whoami">Hi, {{ g.visitor_name }} ·
+          <a href="{{ url_for('set_name', next=request.full_path) }}">not you?</a>
+        </span>
+      {% endif %}
     </nav>
   </header>
   <main>

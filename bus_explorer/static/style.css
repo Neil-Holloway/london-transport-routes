@@ -16,6 +16,8 @@ body {
 .topbar a { color: white; text-decoration: none; }
 .topbar nav a { margin-left: 16px; }
 .brand { font-weight: bold; font-size: 1.1em; }
+.whoami { margin-left: 16px; font-size: 0.85em; color: #cbd5e1; }
+.whoami a { text-decoration: underline; }
 
 main { max-width: 720px; margin: 0 auto; padding: 24px; }
 

@@ -5,7 +5,7 @@ Run with:
     python3 -m bus_explorer.app
 """
 
-from flask import Flask, redirect, render_template, request, url_for
+from flask import Flask, g, make_response, redirect, render_template, request, url_for
 
 from . import db, geocode
 from .categorise import CATEGORIES
@@ -15,6 +15,29 @@ from .walkplan import build_plan
 
 app = Flask(__name__)
 db.init_db()
+
+VISITOR_COOKIE = "visitor_name"
+_EXEMPT_ENDPOINTS = {"set_name", "static"}
+
+
+@app.before_request
+def _load_visitor_name():
+    g.visitor_name = request.cookies.get(VISITOR_COOKIE)
+    if not g.visitor_name and request.endpoint not in _EXEMPT_ENDPOINTS:
+        return redirect(url_for("set_name", next=request.full_path))
+
+
+@app.route("/set-name", methods=["GET", "POST"])
+def set_name():
+    next_url = request.values.get("next") or url_for("index")
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        if not name:
+            return render_template("set_name.html", error="Please enter a name.", next=next_url)
+        resp = make_response(redirect(next_url))
+        resp.set_cookie(VISITOR_COOKIE, name, max_age=60 * 60 * 24 * 365 * 5)
+        return resp
+    return render_template("set_name.html", next=next_url)
 
 
 @app.route("/")
@@ -78,7 +101,7 @@ def route_results(line_id):
     view = request.args.get("view", "all")  # highlights | all | unvisited
     categories = request.args.getlist("categories") or CATEGORIES
 
-    results = db.get_route_results(line_id)
+    results = db.get_route_results(line_id, g.visitor_name)
     if walk_m:
         results = [r for r in results if r["distance_m"] <= walk_m]
     results = [r for r in results if r["category"] in categories]
@@ -114,7 +137,7 @@ def create_walk_plan():
 @app.route("/route/<line_id>/walk-plan")
 def walk_plan(line_id):
     ids = request.args.getlist("ids")
-    route_results = db.get_route_results(line_id)
+    route_results = db.get_route_results(line_id, g.visitor_name)
     by_id = {r["id"]: r for r in route_results}
     selected = [by_id[i] for i in ids if i in by_id]
 
@@ -153,7 +176,7 @@ def walk_plan(line_id):
 
 @app.route("/attraction/<path:attraction_id>")
 def attraction_detail(attraction_id):
-    attraction = db.get_attraction(attraction_id)
+    attraction = db.get_attraction(attraction_id, g.visitor_name)
     if not attraction:
         return "Attraction not found", 404
 
@@ -178,7 +201,7 @@ def mark_visit(attraction_id):
     note = request.form.get("note") or None
     favourite = request.form.get("favourite") == "on"
 
-    db.set_visit(attraction_id, visited, date_visited, note, favourite)
+    db.set_visit(attraction_id, g.visitor_name, visited, date_visited, note, favourite)
 
     return_to = request.form.get("return_to") or url_for("attraction_detail", attraction_id=attraction_id)
     return redirect(return_to)
@@ -190,7 +213,7 @@ def my_visits():
     favourites_only = request.args.get("favourites") == "1"
     line_id = request.args.get("route") or None
 
-    visits = db.get_all_visits(category=category, favourites_only=favourites_only, line_id=line_id)
+    visits = db.get_all_visits(g.visitor_name, category=category, favourites_only=favourites_only, line_id=line_id)
     routes = db.get_routes_explored()
     return render_template(
         "my_visits.html",

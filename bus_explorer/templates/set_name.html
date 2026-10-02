@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}What's your name? — Bus Explorer{% endblock %}
+{% block content %}
+<div class="card center-form">
+  <h1>What's your name?</h1>
+  <p class="hint">
+    This just labels your own visited places, notes and favourites so they
+    don't get mixed up with anyone else sharing this app - no password, no
+    account, just a nickname.
+  </p>
+
+  {% if error %}
+    <p class="error">{{ error }}</p>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('set_name') }}">
+    <input type="hidden" name="next" value="{{ next }}">
+    <label>
+      Your name
+      <input type="text" name="name" placeholder="e.g. Neil" required autofocus>
+    </label>
+    <button type="submit">Continue</button>
+  </form>
+</div>
+{% endblock %}
