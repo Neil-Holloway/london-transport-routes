@@ -35,9 +35,7 @@
         {% if r.visited %}✓ Visited{% else %}○ Not visited{% endif %}
         {% if r.favourite %}★{% endif %}
       </div>
-      {% if r.has_more_info %}
-      <a class="more-info" href="{{ url_for('attraction_detail', attraction_id=r.id) }}">More information</a>
-      {% endif %}
+      <a class="more-info" href="{{ url_for('attraction_detail', attraction_id=r.id) }}">Show map and more information</a>
     </div>
     {% endfor %}
   </div>

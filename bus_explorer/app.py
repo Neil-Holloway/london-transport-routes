@@ -9,7 +9,6 @@ from flask import Flask, redirect, render_template, request, url_for
 
 from . import db, geocode
 from .categorise import CATEGORIES
-from .enrich import NO_FURTHER_DETAILS
 from .pipeline import explore_route
 from .tfl_client import RouteNotFoundError
 from .walkplan import build_plan
@@ -91,9 +90,6 @@ def route_results(line_id):
         )]
     elif view == "unvisited":
         results = [r for r in results if not r["visited"]]
-
-    for r in results:
-        r["has_more_info"] = bool(r["history"]) and r["history"] not in (r["why"], NO_FURTHER_DETAILS)
 
     origin = results[0]["nearest_stop_name"] if results else None
     return render_template(
