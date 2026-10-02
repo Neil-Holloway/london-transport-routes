@@ -7,7 +7,7 @@ Run with:
 
 from flask import Flask, g, make_response, redirect, render_template, request, url_for
 
-from . import db, geocode
+from . import db, geocode, overpass_client
 from .categorise import CATEGORIES
 from .categorise_activity import CATEGORIES as ACTIVITY_CATEGORIES
 from .pipeline import explore_route
@@ -174,6 +174,35 @@ def walk_plan(line_id):
     return render_template(
         "walk_plan.html", line_id=line_id, plan=plan, totals=totals, maps_url=maps_url
     )
+
+
+@app.route("/debug-overpass")
+def debug_overpass():
+    """Temporary diagnostic: test each Overpass mirror directly with a
+    trivial query, to tell network-level unreachability (from wherever this
+    app happens to be deployed) apart from the real app's query being too
+    heavy. Not linked from any page - remove once the mirror reachability
+    question is settled.
+    """
+    import time
+    import urllib.parse
+    import urllib.request
+
+    query = "[out:json][timeout:10];node(51.5,-0.1,51.501,-0.099);out;"
+    body = urllib.parse.urlencode({"data": query}).encode()
+    lines = []
+    for mirror in overpass_client.MIRRORS:
+        t0 = time.time()
+        try:
+            req = urllib.request.Request(
+                mirror, data=body, headers={"User-Agent": overpass_client.USER_AGENT}
+            )
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = resp.read()
+            lines.append(f"{mirror}: OK in {time.time() - t0:.1f}s, {len(data)} bytes")
+        except Exception as e:
+            lines.append(f"{mirror}: FAILED after {time.time() - t0:.1f}s - {e!r}")
+    return "<br>".join(lines)
 
 
 @app.route("/what-can-i-do")
