@@ -129,9 +129,14 @@ def enrich(tags, category, lat=None, lon=None):
         why = sentences[0].strip()
         if not why.endswith("."):
             why += "."
+        # history is the *rest* of the extract, not the whole thing - why
+        # already covers the first sentence, so repeating it under a
+        # separate "History" heading would just duplicate text on screen.
+        remainder = ". ".join(sentences[1:]).strip()
+        history = remainder if remainder else None
         return {
             "why": why,
-            "history": extract,
+            "history": history,
             "source_url": wiki_summary["url"],
         }
 
