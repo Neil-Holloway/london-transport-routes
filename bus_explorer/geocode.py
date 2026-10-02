@@ -18,18 +18,29 @@ import urllib.request
 
 USER_AGENT = "BusExplorer/0.1 (https://github.com/Georege-Holloway/london-transport-routes)"
 
+# Greater London, used as a soft ranking bias for geocode_place (see there).
+_LONDON_VIEWBOX = "-0.52,51.70,0.30,51.28"  # left,top,right,bottom
+
 
 def geocode_place(place_name):
     """Forward-geocode a place name to (lat, lon) via Nominatim's search
     endpoint. Returns None if nothing matches. Biased towards London (and
     restricted to GB) since every search in this app assumes a London bus
-    journey, but not hard-restricted to a bounding box, so a specific place
-    name (e.g. "Beckenham") resolves to its real location rather than being
-    silently dropped if Nominatim's idea of "London" doesn't cover it.
+    journey, but not hard-restricted to a bounding box (viewbox+bounded=0 is
+    a soft preference, not a filter), so a specific place name still
+    resolves to its real location rather than being silently dropped if
+    Nominatim's idea of "London" doesn't cover it.
+
+    The bias matters: without it, a same-named place elsewhere in GB can
+    outrank the London one on Nominatim's own "importance" score - e.g.
+    "West Wickham" (the London Borough of Bromley suburb this app means)
+    previously lost to "West Wickham, Cambridgeshire", a small village that
+    Nominatim ranks as very slightly more important.
     """
     url = (
         "https://nominatim.openstreetmap.org/search?format=jsonv2"
         f"&q={urllib.parse.quote(place_name)}&countrycodes=gb&limit=1"
+        f"&viewbox={_LONDON_VIEWBOX}&bounded=0"
     )
     try:
         req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
