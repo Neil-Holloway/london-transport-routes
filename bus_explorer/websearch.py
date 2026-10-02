@@ -25,6 +25,18 @@ USER_AGENT = "BusExplorer/0.1 (https://github.com/Neil-Holloway/london-transport
 
 _TAG_RE = re.compile(r"<[^>]+>")
 
+# Commercial/aggregator domains that come up when a place's name happens to
+# match a product, or a travel site lists it as a nearby point of interest -
+# neither is an actual description of the place itself, so a title/name
+# match against these is worthless. (Hit this in practice: "Engine Block"
+# matched a car-parts shop, "Royal Arsenal Thames Path Garden" matched an
+# Agoda hotel-listing page.)
+_BLOCKED_DOMAINS = (
+    "agoda.com", "booking.com", "tripadvisor.", "airbnb.", "expedia.",
+    "hotels.com", "flickr.com", "pinterest.", "amazon.", "ebay.",
+    "etsy.com", "onlinecarparts.co.uk", "getyourguide.com", "viator.com",
+)
+
 
 def _strip_tags(s):
     """Brave's snippets highlight matched terms with <strong> tags."""
@@ -38,10 +50,18 @@ def _normalise(s):
 def search(name, extra_terms="London"):
     """Returns {snippet, url, title} for the best-matching result, or None.
 
-    Only accepted if the place's name plausibly appears in the result's
-    title - a search can easily surface an unrelated page that merely
-    mentions the name in passing, and an untitled match is more likely to be
-    a coincidence than a page actually about this place.
+    Two places can share a name (there's a Wellington Park in Somerset as
+    well as London), and a search can surface a page that only mentions the
+    name in passing rather than being about this place at all. To guard
+    against both:
+      - the result must come from a domain that isn't a known commercial/
+        travel aggregator (see _BLOCKED_DOMAINS)
+      - the place's name must appear in the result's title (not just buried
+        in the snippet)
+      - the title+snippet together must also mention "london" somewhere,
+        so a same-named place in a different city doesn't get accepted
+    This trades recall for precision deliberately - an honest "no further
+    details" beats a confidently-wrong source.
     """
     if not API_KEY:
         return None
@@ -69,10 +89,20 @@ def search(name, extra_terms="London"):
         return None
 
     for result in data.get("web", {}).get("results", []):
+        result_url = result.get("url", "")
+        if any(domain in result_url for domain in _BLOCKED_DOMAINS):
+            continue
+
         title = result.get("title", "")
         if target not in _normalise(title):
             continue
+
         snippet = _strip_tags(result.get("description", "")).strip()
-        if snippet:
-            return {"snippet": snippet, "url": result.get("url"), "title": title}
+        if not snippet:
+            continue
+
+        if "london" not in _normalise(title + snippet):
+            continue
+
+        return {"snippet": snippet, "url": result_url, "title": title}
     return None
