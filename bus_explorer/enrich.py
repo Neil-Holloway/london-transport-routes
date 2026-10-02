@@ -158,21 +158,31 @@ def enrich(tags, category, lat=None, lon=None):
 
     wikidata_desc = _wikidata_description(tags["wikidata"]) if tags.get("wikidata") else None
     web_result = websearch.search(name) if not wikidata_desc else None
+    confident_web = web_result and web_result["confident"]
 
     if wikidata_desc:
         why = f"{name} — {wikidata_desc}."
-    elif web_result:
+    elif confident_web:
         why = f"{name} — {web_result['snippet']}"
     else:
         why = f"{name} is tagged in OpenStreetMap as {category.lower()}."
 
     if details:
         history = " ".join(details)
-    elif not wikidata_desc and not web_result:
+    elif web_result and not confident_web:
+        # Title-only match (e.g. a blog post or directory listing that
+        # mentions the name) can't be automatically verified as being about
+        # this exact place - present it as a lead for the visitor to judge,
+        # not as settled fact.
+        history = (
+            "Possibly related information found online, not verified as "
+            f"being about this exact place: \"{web_result['snippet']}\""
+        )
+    elif not wikidata_desc and not confident_web:
         # Only show the "nothing more known" line when we genuinely have
-        # nothing - if wikidata_desc or web_result filled in `why`, repeating
-        # a generic "no further details" line right below it reads as
-        # broken, not honest.
+        # nothing - if wikidata_desc or a confident web_result filled in
+        # `why`, repeating a generic "no further details" line right below
+        # it reads as broken, not honest.
         history = NO_FURTHER_DETAILS
     else:
         history = None

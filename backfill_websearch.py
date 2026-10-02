@@ -23,22 +23,40 @@ def main():
             rows = cur.fetchall()
 
     print(f"Found {len(rows)} attractions with no further details.")
-    updated = 0
+    confident_count = 0
+    hedged_count = 0
     for row in rows:
         result = websearch.search(row["name"])
         if not result:
             continue
-        why = f"{row['name']} — {result['snippet']}"
         with db.get_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE attractions SET why = %s, history = NULL, source_url = %s WHERE id = %s",
-                    (why, result["url"], row["id"]),
-                )
-        updated += 1
-        print(f"Updated: {row['name']} -> {result['url']}")
+                if result["confident"]:
+                    why = f"{row['name']} — {result['snippet']}"
+                    cur.execute(
+                        "UPDATE attractions SET why = %s, history = NULL, source_url = %s WHERE id = %s",
+                        (why, result["url"], row["id"]),
+                    )
+                    confident_count += 1
+                    print(f"Updated (confident): {row['name']} -> {result['url']}")
+                else:
+                    history = (
+                        "Possibly related information found online, not verified as "
+                        f"being about this exact place: \"{result['snippet']}\""
+                    )
+                    cur.execute(
+                        "UPDATE attractions SET history = %s, source_url = %s WHERE id = %s",
+                        (history, result["url"], row["id"]),
+                    )
+                    hedged_count += 1
+                    print(f"Updated (possibly related): {row['name']} -> {result['url']}")
 
-    print(f"Updated {updated} of {len(rows)}, skipped {len(rows) - updated}.")
+    total_updated = confident_count + hedged_count
+    print(
+        f"Updated {total_updated} of {len(rows)} "
+        f"({confident_count} confident, {hedged_count} possibly related), "
+        f"skipped {len(rows) - total_updated}."
+    )
 
 
 if __name__ == "__main__":

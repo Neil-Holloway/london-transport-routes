@@ -25,21 +25,19 @@ USER_AGENT = "BusExplorer/0.1 (https://github.com/Neil-Holloway/london-transport
 
 _TAG_RE = re.compile(r"<[^>]+>")
 
-# Commercial/aggregator/social domains that come up when a place's name
-# happens to match a product, a person, or a travel site lists it as a
-# nearby point of interest - none of these are an actual description of the
-# place itself, so a title/name match against them is worthless (or, for
-# personal social media profiles, a privacy problem - the "match" is someone
-# whose name coincides with the place name, not a page about the place).
-# Hit in practice: "Engine Block" -> a car-parts shop, "Royal Arsenal Thames
-# Path Garden" -> an Agoda hotel listing, a property listing on Zoopla, and
-# an individual's personal Facebook page.
+# Domains that are never a description of the place itself, regardless of
+# any name match - real-estate listings and generic shopping/travel
+# aggregators. (Hit in practice: "Engine Block" -> a car-parts shop, "Royal
+# Arsenal Thames Path Garden" -> an Agoda hotel listing, a Zoopla property
+# listing.) Social media is deliberately NOT blocked here - a small
+# organisation's own Facebook page (e.g. a church with no other web
+# presence) can be a perfectly genuine source; see `confident` below for how
+# that's distinguished from an unrelated same-named person's profile.
 _BLOCKED_DOMAINS = (
     "agoda.com", "booking.com", "tripadvisor.", "airbnb.", "expedia.",
     "hotels.com", "flickr.com", "pinterest.", "amazon.", "ebay.",
     "etsy.com", "onlinecarparts.co.uk", "getyourguide.com", "viator.com",
-    "zoopla.co.uk", "rightmove.co.uk", "facebook.com", "instagram.com",
-    "twitter.com", "x.com", "linkedin.com", "tiktok.com",
+    "zoopla.co.uk", "rightmove.co.uk",
 )
 
 
@@ -53,20 +51,34 @@ def _normalise(s):
 
 
 def search(name, extra_terms="London"):
-    """Returns {snippet, url, title} for the best-matching result, or None.
+    """Returns {snippet, url, title, confident} for the best-matching
+    result, or None.
 
     Two places can share a name (there's a Wellington Park in Somerset as
     well as London), and a search can surface a page that only mentions the
-    name in passing rather than being about this place at all. To guard
-    against both:
-      - the result must come from a domain that isn't a known commercial/
-        travel aggregator (see _BLOCKED_DOMAINS)
+    name in passing rather than being about this place at all. Baseline
+    filters that must always pass:
+      - the result must not be from a known real-estate/aggregator domain
+        (see _BLOCKED_DOMAINS) - never a description of the place itself
       - the place's name must appear in the result's title (not just buried
         in the snippet)
-      - the title+snippet together must also mention "london" somewhere,
-        so a same-named place in a different city doesn't get accepted
-    This trades recall for precision deliberately - an honest "no further
-    details" beats a confidently-wrong source.
+      - the title+snippet together must mention "london" somewhere, so a
+        same-named place in a different city doesn't get accepted
+
+    Beyond that, `confident` marks whether the result is strong enough to
+    present as settled fact, or should be flagged as unverified:
+      - confident=True when the place's name also appears in the result's
+        own domain or URL path (e.g. "dantemayfair.com" for "Dante", or a
+        Facebook page at "/woolwichevangelical" for "Woolwich Evangelical
+        Church") - a vanity URL matching an organisation's name is strong
+        evidence this is that organisation's own page, not a same-named
+        person or an unrelated mention. Personal profiles essentially never
+        have a vanity URL that happens to match someone else's business or
+        landmark name.
+      - confident=False otherwise - title-only matches (e.g. a blog post or
+        directory listing that happens to mention the name) are plausible
+        but not verifiable automatically, so the caller should present them
+        as "possibly related" rather than fact.
     """
     if not API_KEY:
         return None
@@ -109,5 +121,9 @@ def search(name, extra_terms="London"):
         if "london" not in _normalise(title + snippet):
             continue
 
-        return {"snippet": snippet, "url": result_url, "title": title}
+        parsed = urllib.parse.urlparse(result_url)
+        domain_and_path = _normalise(parsed.netloc + parsed.path)
+        confident = target in domain_and_path
+
+        return {"snippet": snippet, "url": result_url, "title": title, "confident": confident}
     return None
