@@ -78,17 +78,26 @@ def _build_multi_bbox_query(bboxes, clauses):
     return f"[out:json][timeout:50];\n({body}\n);\nout center tags;"
 
 
-def _execute(query, retries_per_mirror=1):
+def _execute(query, rounds=1, timeout=25):
+    """POST query to each mirror in turn, trying every mirror before
+    retrying any of them again - a mirror that's briefly overloaded gets a
+    second chance only after the others have already been tried, rather
+    than burning the retry budget hammering the same slow mirror twice in a
+    row. `timeout` is deliberately shorter than Overpass's own
+    [timeout:50] query budget so a stuck mirror fails fast enough to leave
+    time for `rounds` > 1 to actually help within the app's own request
+    timeout, rather than one hung attempt eating the whole budget.
+    """
     body = urllib.parse.urlencode({"data": query}).encode()
 
     last_error = None
-    for mirror in MIRRORS:
-        for attempt in range(retries_per_mirror):
+    for _ in range(rounds):
+        for mirror in MIRRORS:
             try:
                 req = urllib.request.Request(
                     mirror, data=body, headers={"User-Agent": USER_AGENT}
                 )
-                with urllib.request.urlopen(req, timeout=60) as resp:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
                     data = json.loads(resp.read())
                 return _normalise_elements(data.get("elements", []))
             except OSError as e:
@@ -110,20 +119,25 @@ def find_candidates(min_lat, min_lon, max_lat, max_lon, retries_per_mirror=1, cl
     Returns a list of dicts: {id, type, lat, lon, tags}.
     """
     query = _build_query(min_lat, min_lon, max_lat, max_lon, clauses or INTERESTING_QUERY_CLAUSES)
-    return _execute(query, retries_per_mirror)
+    return _execute(query, rounds=retries_per_mirror)
 
 
-def find_candidates_multi_bbox(bboxes, retries_per_mirror=1, clauses=None):
+def find_candidates_multi_bbox(bboxes, retries_per_mirror=2, clauses=None):
     """Query Overpass for candidate POIs across several bounding boxes in a
     single request. See _build_multi_bbox_query for why this exists.
 
     bboxes is a list of (min_lat, min_lon, max_lat, max_lon) tuples.
+    Defaults to two rounds through all mirrors (see _execute) - What Can I
+    Do's combined-bbox queries are heavier than a single-route heritage
+    search and were seen failing in production against mirrors that worked
+    fine from elsewhere, so a single pass per mirror wasn't resilient enough.
+
     Returns a deduplicated list of dicts: {id, type, lat, lon, tags} - the
     same OSM element can legitimately fall inside more than one journey's
     box (routes often share stretches of road).
     """
     query = _build_multi_bbox_query(bboxes, clauses or INTERESTING_QUERY_CLAUSES)
-    elements = _execute(query, retries_per_mirror)
+    elements = _execute(query, rounds=retries_per_mirror)
 
     seen = set()
     deduped = []
