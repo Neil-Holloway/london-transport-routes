@@ -25,16 +25,21 @@ USER_AGENT = "BusExplorer/0.1 (https://github.com/Neil-Holloway/london-transport
 
 _TAG_RE = re.compile(r"<[^>]+>")
 
-# Commercial/aggregator domains that come up when a place's name happens to
-# match a product, or a travel site lists it as a nearby point of interest -
-# neither is an actual description of the place itself, so a title/name
-# match against these is worthless. (Hit this in practice: "Engine Block"
-# matched a car-parts shop, "Royal Arsenal Thames Path Garden" matched an
-# Agoda hotel-listing page.)
+# Commercial/aggregator/social domains that come up when a place's name
+# happens to match a product, a person, or a travel site lists it as a
+# nearby point of interest - none of these are an actual description of the
+# place itself, so a title/name match against them is worthless (or, for
+# personal social media profiles, a privacy problem - the "match" is someone
+# whose name coincides with the place name, not a page about the place).
+# Hit in practice: "Engine Block" -> a car-parts shop, "Royal Arsenal Thames
+# Path Garden" -> an Agoda hotel listing, a property listing on Zoopla, and
+# an individual's personal Facebook page.
 _BLOCKED_DOMAINS = (
     "agoda.com", "booking.com", "tripadvisor.", "airbnb.", "expedia.",
     "hotels.com", "flickr.com", "pinterest.", "amazon.", "ebay.",
     "etsy.com", "onlinecarparts.co.uk", "getyourguide.com", "viator.com",
+    "zoopla.co.uk", "rightmove.co.uk", "facebook.com", "instagram.com",
+    "twitter.com", "x.com", "linkedin.com", "tiktok.com",
 )
 
 
