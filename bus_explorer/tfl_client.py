@@ -6,6 +6,7 @@ lat/lon coordinates of every stop.
 
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -128,13 +129,28 @@ def get_stop_coordinates(stop_ids):
     return coords
 
 
+_NIGHT_BUS_RE = re.compile(r"^n\d")
+
+
+def _is_night_bus(line_id):
+    """TfL's own convention: a night bus's route number is always 'N'
+    followed by digits (N199, N1, N3...) - no day route uses this pattern.
+    Night routes often run much further/differently from their daytime
+    equivalent (see Petts Wood's N199 reaching central London), which isn't
+    the kind of local, during-the-day activity trip What Can I Do is for.
+    """
+    return bool(_NIGHT_BUS_RE.match(line_id))
+
+
 def find_nearby_stops(lat, lon, radius_m):
     """Find bus stops within radius_m of (lat, lon), each with the bus
     routes serving it.
 
     Returns a list of {id, name, lat, lon, lines: [line_id, ...]}. Only
-    StopPoints that serve at least one bus route are returned - TfL's radius
-    search also returns tube/rail/tram stops, which this app has no use for.
+    StopPoints that serve at least one (non-night) bus route are returned -
+    TfL's radius search also returns tube/rail/tram stops, which this app
+    has no use for, and night buses are deliberately excluded (see
+    _is_night_bus).
     """
     path = (
         f"/StopPoint?lat={lat}&lon={lon}&radius={radius_m}"
@@ -149,7 +165,7 @@ def find_nearby_stops(lat, lon, radius_m):
         lines = [
             line["id"]
             for line in sp.get("lines", [])
-            if line.get("id")
+            if line.get("id") and not _is_night_bus(line["id"])
         ]
         if not lines:
             continue
