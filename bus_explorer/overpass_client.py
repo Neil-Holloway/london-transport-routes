@@ -2,6 +2,31 @@
 
 Public Overpass instances are shared, rate-limited infrastructure and can be
 slow or briefly unavailable, so we try a couple of mirrors with retries.
+
+Mirror list ordering matters for this specific deployment: direct testing
+from Render (see the former /debug-overpass diagnostic route, removed once
+this was confirmed) found overpass-api.de and lz4.overpass-api.de (both
+Hetzner-hosted) are completely unreachable from Render's network - instant
+"Network is unreachable", not a slow/overloaded response - while several
+other public mirrors (kumi.systems, openstreetmap.ru, mail.ru, osm.vi-di.fr)
+are reachable but stall for 15+ seconds on even a trivial single-node
+query, suggesting they're rate-limiting or deprioritising Render's egress
+IPs specifically. overpass.osm.ch was the only mirror that responded
+quickly from Render - but it turned out to be a Switzerland-scoped data
+extract with zero London/UK coverage (confirmed directly: a Bromley-area
+library query that returns 5 real results on the Hetzner mirrors returns 0
+on osm.ch), so it's excluded entirely rather than just deprioritised -
+a "successful" response from it is worse than a failure, since it looks
+like a legitimately empty result instead of an error. overpass.openstreetmap.fr
+leads the list instead: it has correct UK data and isn't Hetzner-hosted, so
+it's a plausible candidate for being reachable from Render where the
+Hetzner mirrors aren't, though this hasn't yet been confirmed against
+Render's network specifically (only from a non-Render network). The
+unreachable Hetzner mirrors are kept after it since they fail near-instantly
+(cheap) and may work from a different host/region in future, but the
+mirrors that merely stall for 15s+ per attempt (kumi.systems,
+openstreetmap.ru, mail.ru, osm.vi-di.fr) are deliberately excluded - trying
+them wastes the whole retry budget for nothing.
 """
 
 import json
@@ -9,11 +34,12 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 
 MIRRORS = [
+    "https://overpass.openstreetmap.fr/api/interpreter",
     "https://lz4.overpass-api.de/api/interpreter",
     "https://overpass-api.de/api/interpreter",
-    "https://overpass.kumi.systems/api/interpreter",
 ]
 
 USER_AGENT = "BusExplorer/0.1 (https://github.com/Georege-Holloway/london-transport-routes)"
@@ -58,7 +84,13 @@ def _build_query(min_lat, min_lon, max_lat, max_lon, clauses):
         parts.append(f"node{clause}{bbox};")
         parts.append(f"way{clause}{bbox};")
     body = "\n".join(parts)
-    return f"[out:json][timeout:50];\n({body}\n);\nout center tags;"
+    # The nonce comment keeps a retried query from being byte-for-byte
+    # identical to the previous attempt - some mirrors (e.g. overpass.osm.ch)
+    # reject an exact-duplicate query sent again shortly after the first with
+    # a "duplicate_query" error instead of running it, which would otherwise
+    # make retries (either ours or a user re-submitting the same search)
+    # pointless.
+    return f"[out:json][timeout:50];\n// nonce:{uuid.uuid4()}\n({body}\n);\nout center tags;"
 
 
 def _build_multi_bbox_query(bboxes, clauses):
@@ -75,7 +107,8 @@ def _build_multi_bbox_query(bboxes, clauses):
             parts.append(f"node{clause}{bbox};")
             parts.append(f"way{clause}{bbox};")
     body = "\n".join(parts)
-    return f"[out:json][timeout:50];\n({body}\n);\nout center tags;"
+    # See _build_query for why the nonce comment is here.
+    return f"[out:json][timeout:50];\n// nonce:{uuid.uuid4()}\n({body}\n);\nout center tags;"
 
 
 def _execute(query, rounds=1, timeout=25):
@@ -100,11 +133,15 @@ def _execute(query, rounds=1, timeout=25):
                 with urllib.request.urlopen(req, timeout=timeout) as resp:
                     data = json.loads(resp.read())
                 return _normalise_elements(data.get("elements", []))
-            except OSError as e:
-                # Covers HTTPError/URLError plus socket.timeout, which on
-                # Python <3.10 is a distinct class from TimeoutError and
+            except (OSError, ValueError) as e:
+                # OSError covers HTTPError/URLError plus socket.timeout, which
+                # on Python <3.10 is a distinct class from TimeoutError and
                 # would otherwise escape uncaught, skipping remaining
-                # mirrors/retries and crashing the request.
+                # mirrors/retries and crashing the request. ValueError covers
+                # json.JSONDecodeError - some mirrors return an HTML/XML error
+                # body instead of JSON (e.g. a "duplicate_query" rejection),
+                # which should also be treated as a retryable mirror failure
+                # rather than crashing the request.
                 last_error = e
                 time.sleep(2)
     raise RuntimeError(f"Overpass query failed on all mirrors: {last_error}")
