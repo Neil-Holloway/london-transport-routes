@@ -124,22 +124,36 @@ def init_db():
                 cur.execute("ALTER TABLE visits ADD PRIMARY KEY (attraction_id, visitor_name)")
 
 
-def upsert_attraction(attraction):
-    attraction = {"address": None, **attraction}
-    with get_conn() as conn:
+def _run(conn, sql, params):
+    """Run one statement, either on a caller-supplied connection (left open
+    and uncommitted - the caller owns its lifecycle, e.g. one connection
+    shared across a whole batch of upserts) or, if none is given, on a
+    fresh connection opened and committed just for this one statement.
+    """
+    if conn is not None:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO attractions (id, name, category, lat, lon, why, history, source_url, address, osm_type, osm_id)
-                VALUES (%(id)s, %(name)s, %(category)s, %(lat)s, %(lon)s, %(why)s, %(history)s, %(source_url)s, %(address)s, %(osm_type)s, %(osm_id)s)
-                ON CONFLICT (id) DO UPDATE SET
-                    name=excluded.name, category=excluded.category, lat=excluded.lat, lon=excluded.lon,
-                    why=excluded.why, history=excluded.history, source_url=excluded.source_url,
-                    address=COALESCE(excluded.address, attractions.address),
-                    osm_type=excluded.osm_type, osm_id=excluded.osm_id
-                """,
-                attraction,
-            )
+            cur.execute(sql, params)
+        return
+    with get_conn() as owned:
+        with owned.cursor() as cur:
+            cur.execute(sql, params)
+
+
+def upsert_attraction(attraction, conn=None):
+    attraction = {"address": None, **attraction}
+    _run(
+        conn,
+        """
+        INSERT INTO attractions (id, name, category, lat, lon, why, history, source_url, address, osm_type, osm_id)
+        VALUES (%(id)s, %(name)s, %(category)s, %(lat)s, %(lon)s, %(why)s, %(history)s, %(source_url)s, %(address)s, %(osm_type)s, %(osm_id)s)
+        ON CONFLICT (id) DO UPDATE SET
+            name=excluded.name, category=excluded.category, lat=excluded.lat, lon=excluded.lon,
+            why=excluded.why, history=excluded.history, source_url=excluded.source_url,
+            address=COALESCE(excluded.address, attractions.address),
+            osm_type=excluded.osm_type, osm_id=excluded.osm_id
+        """,
+        attraction,
+    )
 
 
 def set_address(attraction_id, address):
@@ -148,67 +162,61 @@ def set_address(attraction_id, address):
             cur.execute("UPDATE attractions SET address = %s WHERE id = %s", (address, attraction_id))
 
 
-def clear_route_attractions(line_id):
+def clear_route_attractions(line_id, conn=None):
     """Remove all cached route_attractions rows for a line before
     re-exploring it, so stale entries (e.g. from an old dedup pass) don't
     linger alongside freshly computed ones. The underlying attractions rows
     and any visit data are untouched, since attractions can be shared across
     routes.
     """
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM route_attractions WHERE line_id = %s", (line_id,))
+    _run(conn, "DELETE FROM route_attractions WHERE line_id = %s", (line_id,))
 
 
-def upsert_route_attraction(row):
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO route_attractions
-                    (line_id, attraction_id, nearest_stop_id, nearest_stop_name, distance_m, walk_minutes, sequence_index, direction, max_walk_m)
-                VALUES
-                    (%(line_id)s, %(attraction_id)s, %(nearest_stop_id)s, %(nearest_stop_name)s, %(distance_m)s, %(walk_minutes)s, %(sequence_index)s, %(direction)s, %(max_walk_m)s)
-                ON CONFLICT (line_id, attraction_id) DO UPDATE SET
-                    nearest_stop_id=excluded.nearest_stop_id, nearest_stop_name=excluded.nearest_stop_name,
-                    distance_m=excluded.distance_m, walk_minutes=excluded.walk_minutes,
-                    sequence_index=excluded.sequence_index, direction=excluded.direction,
-                    max_walk_m=excluded.max_walk_m
-                """,
-                row,
-            )
+def upsert_route_attraction(row, conn=None):
+    _run(
+        conn,
+        """
+        INSERT INTO route_attractions
+            (line_id, attraction_id, nearest_stop_id, nearest_stop_name, distance_m, walk_minutes, sequence_index, direction, max_walk_m)
+        VALUES
+            (%(line_id)s, %(attraction_id)s, %(nearest_stop_id)s, %(nearest_stop_name)s, %(distance_m)s, %(walk_minutes)s, %(sequence_index)s, %(direction)s, %(max_walk_m)s)
+        ON CONFLICT (line_id, attraction_id) DO UPDATE SET
+            nearest_stop_id=excluded.nearest_stop_id, nearest_stop_name=excluded.nearest_stop_name,
+            distance_m=excluded.distance_m, walk_minutes=excluded.walk_minutes,
+            sequence_index=excluded.sequence_index, direction=excluded.direction,
+            max_walk_m=excluded.max_walk_m
+        """,
+        row,
+    )
 
 
-def clear_journey_attractions(search_key):
+def clear_journey_attractions(search_key, conn=None):
     """Same purpose as clear_route_attractions, for What Can I Do searches:
     remove stale placement rows for this starting place before re-running
     the pipeline, without touching the shared attractions/visits data.
     """
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute("DELETE FROM journey_attractions WHERE search_key = %s", (search_key,))
+    _run(conn, "DELETE FROM journey_attractions WHERE search_key = %s", (search_key,))
 
 
-def upsert_journey_attraction(row):
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO journey_attractions
-                    (search_key, attraction_id, line_id, direction, destination_stop_name,
-                     distance_m, walk_minutes, max_walk_to_stop_m, max_walk_from_stop_m)
-                VALUES
-                    (%(search_key)s, %(attraction_id)s, %(line_id)s, %(direction)s, %(destination_stop_name)s,
-                     %(distance_m)s, %(walk_minutes)s, %(max_walk_to_stop_m)s, %(max_walk_from_stop_m)s)
-                ON CONFLICT (search_key, attraction_id) DO UPDATE SET
-                    line_id=excluded.line_id, direction=excluded.direction,
-                    destination_stop_name=excluded.destination_stop_name,
-                    distance_m=excluded.distance_m, walk_minutes=excluded.walk_minutes,
-                    max_walk_to_stop_m=excluded.max_walk_to_stop_m,
-                    max_walk_from_stop_m=excluded.max_walk_from_stop_m
-                """,
-                row,
-            )
+def upsert_journey_attraction(row, conn=None):
+    _run(
+        conn,
+        """
+        INSERT INTO journey_attractions
+            (search_key, attraction_id, line_id, direction, destination_stop_name,
+             distance_m, walk_minutes, max_walk_to_stop_m, max_walk_from_stop_m)
+        VALUES
+            (%(search_key)s, %(attraction_id)s, %(line_id)s, %(direction)s, %(destination_stop_name)s,
+             %(distance_m)s, %(walk_minutes)s, %(max_walk_to_stop_m)s, %(max_walk_from_stop_m)s)
+        ON CONFLICT (search_key, attraction_id) DO UPDATE SET
+            line_id=excluded.line_id, direction=excluded.direction,
+            destination_stop_name=excluded.destination_stop_name,
+            distance_m=excluded.distance_m, walk_minutes=excluded.walk_minutes,
+            max_walk_to_stop_m=excluded.max_walk_to_stop_m,
+            max_walk_from_stop_m=excluded.max_walk_from_stop_m
+        """,
+        row,
+    )
 
 
 def get_journey_results(search_key, visitor_name):

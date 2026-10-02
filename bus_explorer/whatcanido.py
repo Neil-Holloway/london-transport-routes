@@ -129,43 +129,51 @@ def find_activities(place_name, max_walk_to_stop_m, max_walk_from_stop_m, select
     deduped.sort(key=lambda c: c["distance_m"])
 
     search_key = _search_key(place_name)
-    db.clear_journey_attractions(search_key)
-    for cand in deduped:
-        attraction_id = f"osm:{cand['osm_type']}:{cand['osm_id']}"
-        tags = cand["tags"]
-        source_url = tags.get("website") or (
-            f"https://www.openstreetmap.org/{cand['osm_type']}/{cand['osm_id']}"
-        )
-        address = geocode.address_from_tags(tags)
+    # One connection shared across the whole batch, rather than opening a
+    # fresh Postgres connection per upsert - a well-connected place can have
+    # dozens of candidates, and Supabase throttles/limits new connections per
+    # client in quick succession, which was stalling this loop for minutes
+    # (eventually hitting gunicorn's worker timeout) on larger searches.
+    with db.get_conn() as conn:
+        db.clear_journey_attractions(search_key, conn=conn)
+        for cand in deduped:
+            attraction_id = f"osm:{cand['osm_type']}:{cand['osm_id']}"
+            tags = cand["tags"]
+            source_url = tags.get("website") or (
+                f"https://www.openstreetmap.org/{cand['osm_type']}/{cand['osm_id']}"
+            )
+            address = geocode.address_from_tags(tags)
 
-        db.upsert_attraction(
-            {
-                "id": attraction_id,
-                "name": cand["name"],
-                "category": cand["category"],
-                "lat": cand["lat"],
-                "lon": cand["lon"],
-                "why": categorise_activity.DESCRIPTIONS.get(cand["category"]),
-                "history": None,
-                "source_url": source_url,
-                "address": address,
-                "osm_type": cand["osm_type"],
-                "osm_id": cand["osm_id"],
-            }
-        )
-        db.upsert_journey_attraction(
-            {
-                "search_key": search_key,
-                "attraction_id": attraction_id,
-                "line_id": cand["line_id"],
-                "direction": cand["direction"],
-                "destination_stop_name": cand["destination_stop_name"],
-                "distance_m": cand["distance_m"],
-                "walk_minutes": round(cand["distance_m"] / WALK_SPEED_M_PER_MIN, 1),
-                "max_walk_to_stop_m": max_walk_to_stop_m,
-                "max_walk_from_stop_m": max_walk_from_stop_m,
-            }
-        )
+            db.upsert_attraction(
+                {
+                    "id": attraction_id,
+                    "name": cand["name"],
+                    "category": cand["category"],
+                    "lat": cand["lat"],
+                    "lon": cand["lon"],
+                    "why": categorise_activity.DESCRIPTIONS.get(cand["category"]),
+                    "history": None,
+                    "source_url": source_url,
+                    "address": address,
+                    "osm_type": cand["osm_type"],
+                    "osm_id": cand["osm_id"],
+                },
+                conn=conn,
+            )
+            db.upsert_journey_attraction(
+                {
+                    "search_key": search_key,
+                    "attraction_id": attraction_id,
+                    "line_id": cand["line_id"],
+                    "direction": cand["direction"],
+                    "destination_stop_name": cand["destination_stop_name"],
+                    "distance_m": cand["distance_m"],
+                    "walk_minutes": round(cand["distance_m"] / WALK_SPEED_M_PER_MIN, 1),
+                    "max_walk_to_stop_m": max_walk_to_stop_m,
+                    "max_walk_from_stop_m": max_walk_from_stop_m,
+                },
+                conn=conn,
+            )
 
     return {
         "search_key": search_key,

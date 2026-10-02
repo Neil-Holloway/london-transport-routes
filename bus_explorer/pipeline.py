@@ -81,42 +81,50 @@ def explore_route(route_number, max_walk_m):
     deduped = scoring.dedupe(enriched_candidates)
     deduped.sort(key=lambda c: c["nearest_stop_index"])
 
-    db.clear_route_attractions(line_id)
     results = []
-    for cand in deduped:
-        attraction_id = f"osm:{cand['osm_type']}:{cand['osm_id']}"
-        text = enrich.enrich(cand["tags"], cand["category"], cand["lat"], cand["lon"])
-        address = geocode.address_from_tags(cand["tags"])
+    # One connection shared across the whole batch, rather than opening a
+    # fresh Postgres connection per upsert - a route can have dozens of
+    # candidates, and Supabase throttles/limits new connections per client
+    # in quick succession, which was stalling this loop for minutes
+    # (eventually hitting gunicorn's worker timeout) on larger routes.
+    with db.get_conn() as conn:
+        db.clear_route_attractions(line_id, conn=conn)
+        for cand in deduped:
+            attraction_id = f"osm:{cand['osm_type']}:{cand['osm_id']}"
+            text = enrich.enrich(cand["tags"], cand["category"], cand["lat"], cand["lon"])
+            address = geocode.address_from_tags(cand["tags"])
 
-        db.upsert_attraction(
-            {
-                "id": attraction_id,
-                "name": cand["name"],
-                "category": cand["category"],
-                "lat": cand["lat"],
-                "lon": cand["lon"],
-                "why": text["why"],
-                "history": text["history"],
-                "source_url": text["source_url"],
-                "address": address,
-                "osm_type": cand["osm_type"],
-                "osm_id": cand["osm_id"],
-            }
-        )
-        db.upsert_route_attraction(
-            {
-                "line_id": line_id,
-                "attraction_id": attraction_id,
-                "nearest_stop_id": cand["nearest_stop"]["id"],
-                "nearest_stop_name": cand["nearest_stop"]["name"],
-                "distance_m": cand["distance_m"],
-                "walk_minutes": round(cand["distance_m"] / WALK_SPEED_M_PER_MIN, 1),
-                "sequence_index": cand["nearest_stop_index"],
-                "direction": main_branch["direction"],
-                "max_walk_m": max_walk_m,
-            }
-        )
-        results.append(attraction_id)
+            db.upsert_attraction(
+                {
+                    "id": attraction_id,
+                    "name": cand["name"],
+                    "category": cand["category"],
+                    "lat": cand["lat"],
+                    "lon": cand["lon"],
+                    "why": text["why"],
+                    "history": text["history"],
+                    "source_url": text["source_url"],
+                    "address": address,
+                    "osm_type": cand["osm_type"],
+                    "osm_id": cand["osm_id"],
+                },
+                conn=conn,
+            )
+            db.upsert_route_attraction(
+                {
+                    "line_id": line_id,
+                    "attraction_id": attraction_id,
+                    "nearest_stop_id": cand["nearest_stop"]["id"],
+                    "nearest_stop_name": cand["nearest_stop"]["name"],
+                    "distance_m": cand["distance_m"],
+                    "walk_minutes": round(cand["distance_m"] / WALK_SPEED_M_PER_MIN, 1),
+                    "sequence_index": cand["nearest_stop_index"],
+                    "direction": main_branch["direction"],
+                    "max_walk_m": max_walk_m,
+                },
+                conn=conn,
+            )
+            results.append(attraction_id)
 
     origin, destination = tfl_client.principal_journey(resolved)
     return {
