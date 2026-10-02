@@ -13,6 +13,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from . import websearch
+
 USER_AGENT = "BusExplorer/0.1 (https://github.com/Georege-Holloway/london-transport-routes)"
 
 NO_FURTHER_DETAILS = "No further details are available yet from open data sources."
@@ -141,7 +143,11 @@ def enrich(tags, category, lat=None, lon=None):
         }
 
     # Fallback: build something honest from whatever OSM tags exist, plus a
-    # short Wikidata description if there's a linked item without full prose.
+    # short Wikidata description if there's a linked item without full prose,
+    # or - as a last resort, when Wikipedia and Wikidata both have nothing -
+    # a snippet from a real web page found via search (e.g. a council's own
+    # page for a local park). Never paraphrased or invented, same as the
+    # Wikipedia extract above.
     details = []
     if tags.get("inscription"):
         details.append(f'Inscription: "{tags["inscription"]}"')
@@ -151,18 +157,22 @@ def enrich(tags, category, lat=None, lon=None):
         details.append(f"Dates from {tags['start_date']}.")
 
     wikidata_desc = _wikidata_description(tags["wikidata"]) if tags.get("wikidata") else None
+    web_result = websearch.search(name) if not wikidata_desc else None
 
     if wikidata_desc:
         why = f"{name} — {wikidata_desc}."
+    elif web_result:
+        why = f"{name} — {web_result['snippet']}"
     else:
         why = f"{name} is tagged in OpenStreetMap as {category.lower()}."
 
     if details:
         history = " ".join(details)
-    elif not wikidata_desc:
+    elif not wikidata_desc and not web_result:
         # Only show the "nothing more known" line when we genuinely have
-        # nothing - if wikidata_desc filled in `why`, repeating a generic
-        # "no further details" line right below it reads as broken, not honest.
+        # nothing - if wikidata_desc or web_result filled in `why`, repeating
+        # a generic "no further details" line right below it reads as
+        # broken, not honest.
         history = NO_FURTHER_DETAILS
     else:
         history = None
@@ -170,5 +180,7 @@ def enrich(tags, category, lat=None, lon=None):
     source_url = None
     if tags.get("wikidata"):
         source_url = f"https://www.wikidata.org/wiki/{tags['wikidata']}"
+    elif web_result:
+        source_url = web_result["url"]
 
     return {"why": why, "history": history, "source_url": source_url}
