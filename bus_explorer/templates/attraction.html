@@ -14,7 +14,11 @@
 <div id="attraction-map" data-lat="{{ a.lat }}" data-lon="{{ a.lon }}" data-name="{{ a.name }}"></div>
 
 <section>
-  <h2>Possibly related information found on the internet</h2>
+  {% if is_activity %}
+    <h2>What it is</h2>
+  {% else %}
+    <h2>Possibly related information found on the internet</h2>
+  {% endif %}
   <p>{{ a.why }}</p>
 </section>
 

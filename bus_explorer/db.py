@@ -68,6 +68,19 @@ def init_db():
                     PRIMARY KEY (line_id, attraction_id)
                 );
 
+                CREATE TABLE IF NOT EXISTS journey_attractions (
+                    search_key TEXT NOT NULL,
+                    attraction_id TEXT NOT NULL REFERENCES attractions(id),
+                    line_id TEXT,
+                    direction TEXT,
+                    destination_stop_name TEXT,
+                    distance_m DOUBLE PRECISION,
+                    walk_minutes DOUBLE PRECISION,
+                    max_walk_to_stop_m INTEGER,
+                    max_walk_from_stop_m INTEGER,
+                    PRIMARY KEY (search_key, attraction_id)
+                );
+
                 CREATE TABLE IF NOT EXISTS visits (
                     attraction_id TEXT NOT NULL REFERENCES attractions(id),
                     visitor_name TEXT NOT NULL,
@@ -164,6 +177,78 @@ def upsert_route_attraction(row):
                 """,
                 row,
             )
+
+
+def clear_journey_attractions(search_key):
+    """Same purpose as clear_route_attractions, for What Can I Do searches:
+    remove stale placement rows for this starting place before re-running
+    the pipeline, without touching the shared attractions/visits data.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM journey_attractions WHERE search_key = %s", (search_key,))
+
+
+def upsert_journey_attraction(row):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO journey_attractions
+                    (search_key, attraction_id, line_id, direction, destination_stop_name,
+                     distance_m, walk_minutes, max_walk_to_stop_m, max_walk_from_stop_m)
+                VALUES
+                    (%(search_key)s, %(attraction_id)s, %(line_id)s, %(direction)s, %(destination_stop_name)s,
+                     %(distance_m)s, %(walk_minutes)s, %(max_walk_to_stop_m)s, %(max_walk_from_stop_m)s)
+                ON CONFLICT (search_key, attraction_id) DO UPDATE SET
+                    line_id=excluded.line_id, direction=excluded.direction,
+                    destination_stop_name=excluded.destination_stop_name,
+                    distance_m=excluded.distance_m, walk_minutes=excluded.walk_minutes,
+                    max_walk_to_stop_m=excluded.max_walk_to_stop_m,
+                    max_walk_from_stop_m=excluded.max_walk_from_stop_m
+                """,
+                row,
+            )
+
+
+def get_journey_results(search_key, visitor_name):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT a.*, ja.line_id, ja.direction, ja.destination_stop_name,
+                       ja.distance_m, ja.walk_minutes,
+                       COALESCE(v.visited, 0) AS visited, v.date_visited, v.note,
+                       COALESCE(v.favourite, 0) AS favourite
+                FROM journey_attractions ja
+                JOIN attractions a ON a.id = ja.attraction_id
+                LEFT JOIN visits v ON v.attraction_id = a.id AND v.visitor_name = %s
+                WHERE ja.search_key = %s
+                ORDER BY ja.distance_m ASC
+                """,
+                (visitor_name, search_key),
+            )
+            return [dict(r) for r in cur.fetchall()]
+
+
+def max_explored_journey_walk_m(search_key):
+    """Largest (max_walk_to_stop_m, max_walk_from_stop_m) this search has
+    already been run at, or None if never explored - same caching purpose
+    as max_explored_walk_m, for What Can I Do searches.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT MAX(max_walk_to_stop_m) AS to_m, MAX(max_walk_from_stop_m) AS from_m
+                FROM journey_attractions WHERE search_key = %s
+                """,
+                (search_key,),
+            )
+            row = cur.fetchone()
+            if not row or row["to_m"] is None:
+                return None
+            return row["to_m"], row["from_m"]
 
 
 def get_route_results(line_id, visitor_name):

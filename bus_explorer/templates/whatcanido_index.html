@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}What can I do today? — Bus Explorer{% endblock %}
+{% block content %}
+<div class="card center-form">
+  <h1>What can I do today?</h1>
+
+  {% if error %}
+    <p class="error">{{ error }}</p>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('find_activities_route') }}">
+    <label>
+      Starting from
+      <input type="text" name="place_name" placeholder="Beckenham" required autofocus>
+    </label>
+
+    <label>
+      Maximum walk to the bus stop
+      <select name="max_walk_to_stop_m">
+        <option value="250">250 m</option>
+        <option value="500" selected>500 m</option>
+        <option value="1000">1 km</option>
+      </select>
+    </label>
+
+    <label>
+      Maximum walk from the destination stop
+      <select name="max_walk_from_stop_m">
+        <option value="250">250 m</option>
+        <option value="500">500 m</option>
+        <option value="1000" selected>1 km</option>
+        <option value="2000">2 km</option>
+      </select>
+    </label>
+
+    <fieldset class="category-filter">
+      <legend>Types of activity to include</legend>
+      <div class="category-grid">
+        {% for cat in categories %}
+        <label class="category-option">
+          <input type="checkbox" name="categories" value="{{ cat }}" checked>
+          {{ cat }}
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+
+    <button type="submit">Find something to do</button>
+  </form>
+  <p class="hint">Fetching candidate places can take up to a minute the first time a place is explored.</p>
+</div>
+{% endblock %}

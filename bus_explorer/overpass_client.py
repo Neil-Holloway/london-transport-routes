@@ -33,23 +33,52 @@ INTERESTING_QUERY_CLAUSES = [
     '["natural"="water"]',
 ]
 
+# Tag values for What Can I Do's activity search (categorise_activity.py) -
+# a deliberately different set of "interesting" tags, since the question
+# being answered (what can I do) is different from Bus Explorer's (what's
+# worth discovering). See the What Can I Do spec, section 5.
+ACTIVITY_QUERY_CLAUSES = [
+    '["amenity"="cinema"]',
+    '["amenity"="library"]',
+    '["amenity"="theatre"]',
+    '["amenity"="marketplace"]',
+    '["shop"="market"]',
+    '["leisure"="swimming_pool"]',
+    '["leisure"="bowling_green"]',
+    '["leisure"~"^(sports_centre|fitness_centre)$"]',
+    '["landuse"="allotments"]',
+    '["landuse"="recreation_ground"]',
+]
 
-def _build_query(min_lat, min_lon, max_lat, max_lon):
+
+def _build_query(min_lat, min_lon, max_lat, max_lon, clauses):
     bbox = f"({min_lat},{min_lon},{max_lat},{max_lon})"
     parts = []
-    for clause in INTERESTING_QUERY_CLAUSES:
+    for clause in clauses:
         parts.append(f"node{clause}{bbox};")
         parts.append(f"way{clause}{bbox};")
     body = "\n".join(parts)
     return f"[out:json][timeout:50];\n({body}\n);\nout center tags;"
 
 
-def find_candidates(min_lat, min_lon, max_lat, max_lon, retries_per_mirror=1):
-    """Query Overpass for candidate POIs in a bounding box.
-
-    Returns a list of dicts: {id, type, lat, lon, tags}.
+def _build_multi_bbox_query(bboxes, clauses):
+    """Like _build_query, but for several bounding boxes in one query -
+    e.g. one small box per bus journey, rather than one box enclosing every
+    journey combined (which balloons to the size of the widest-spread
+    journeys and ends up querying huge swathes of empty area between
+    unrelated routes - see What Can I Do spec, section 4 performance note).
     """
-    query = _build_query(min_lat, min_lon, max_lat, max_lon)
+    parts = []
+    for min_lat, min_lon, max_lat, max_lon in bboxes:
+        bbox = f"({min_lat},{min_lon},{max_lat},{max_lon})"
+        for clause in clauses:
+            parts.append(f"node{clause}{bbox};")
+            parts.append(f"way{clause}{bbox};")
+    body = "\n".join(parts)
+    return f"[out:json][timeout:50];\n({body}\n);\nout center tags;"
+
+
+def _execute(query, retries_per_mirror=1):
     body = urllib.parse.urlencode({"data": query}).encode()
 
     last_error = None
@@ -70,6 +99,41 @@ def find_candidates(min_lat, min_lon, max_lat, max_lon, retries_per_mirror=1):
                 last_error = e
                 time.sleep(2)
     raise RuntimeError(f"Overpass query failed on all mirrors: {last_error}")
+
+
+def find_candidates(min_lat, min_lon, max_lat, max_lon, retries_per_mirror=1, clauses=None):
+    """Query Overpass for candidate POIs in a bounding box.
+
+    clauses defaults to INTERESTING_QUERY_CLAUSES (Bus Explorer's heritage
+    search); pass ACTIVITY_QUERY_CLAUSES for What Can I Do.
+
+    Returns a list of dicts: {id, type, lat, lon, tags}.
+    """
+    query = _build_query(min_lat, min_lon, max_lat, max_lon, clauses or INTERESTING_QUERY_CLAUSES)
+    return _execute(query, retries_per_mirror)
+
+
+def find_candidates_multi_bbox(bboxes, retries_per_mirror=1, clauses=None):
+    """Query Overpass for candidate POIs across several bounding boxes in a
+    single request. See _build_multi_bbox_query for why this exists.
+
+    bboxes is a list of (min_lat, min_lon, max_lat, max_lon) tuples.
+    Returns a deduplicated list of dicts: {id, type, lat, lon, tags} - the
+    same OSM element can legitimately fall inside more than one journey's
+    box (routes often share stretches of road).
+    """
+    query = _build_multi_bbox_query(bboxes, clauses or INTERESTING_QUERY_CLAUSES)
+    elements = _execute(query, retries_per_mirror)
+
+    seen = set()
+    deduped = []
+    for el in elements:
+        key = (el["osm_type"], el["osm_id"])
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(el)
+    return deduped
 
 
 def _normalise_elements(elements):

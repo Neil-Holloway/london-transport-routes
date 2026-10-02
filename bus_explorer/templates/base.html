@@ -12,6 +12,7 @@
     <a class="brand" href="{{ url_for('index') }}">🚌 Bus Explorer</a>
     <nav>
       <a href="{{ url_for('index') }}">Explore</a>
+      <a href="{{ url_for('what_can_i_do') }}">What Can I Do</a>
       <a href="{{ url_for('my_visits') }}">My Visits</a>
       {% if g.visitor_name %}
         <span class="whoami">Hi, {{ g.visitor_name }} ·

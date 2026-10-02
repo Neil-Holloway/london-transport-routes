@@ -45,7 +45,7 @@ Maximum walk from the destination stop: 250 m | 500 m | 1 km | 2 km
 
 Types of activity to include:
 ☑ Cinemas  ☑ Sports and leisure centres  ☑ Swimming pools
-☑ Libraries  ☑ Theatres and community halls  ☑ Bowls greens
+☑ Libraries  ☑ Theatres  ☑ Bowls greens
 ☑ Allotments and community gardens  ☑ Markets
 
 [Find something to do]
@@ -73,7 +73,7 @@ Initial categories (deliberately separate from Bus Explorer's heritage categorie
 - Sports and leisure centres
 - Swimming pools
 - Libraries
-- Theatres and community halls
+- Theatres
 - Bowls greens
 - Allotments and community gardens
 - Markets (shared with Bus Explorer's category — a market is as much an activity as a discovery)

@@ -19,6 +19,30 @@ import urllib.request
 USER_AGENT = "BusExplorer/0.1 (https://github.com/Georege-Holloway/london-transport-routes)"
 
 
+def geocode_place(place_name):
+    """Forward-geocode a place name to (lat, lon) via Nominatim's search
+    endpoint. Returns None if nothing matches. Biased towards London (and
+    restricted to GB) since every search in this app assumes a London bus
+    journey, but not hard-restricted to a bounding box, so a specific place
+    name (e.g. "Beckenham") resolves to its real location rather than being
+    silently dropped if Nominatim's idea of "London" doesn't cover it.
+    """
+    url = (
+        "https://nominatim.openstreetmap.org/search?format=jsonv2"
+        f"&q={urllib.parse.quote(place_name)}&countrycodes=gb&limit=1"
+    )
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+    except (OSError, ValueError):
+        return None
+
+    if not data:
+        return None
+    return float(data[0]["lat"]), float(data[0]["lon"])
+
+
 def address_from_tags(tags):
     """Returns a formatted address string from addr:* tags, or None."""
     house = tags.get("addr:housenumber")

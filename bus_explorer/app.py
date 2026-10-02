@@ -9,9 +9,11 @@ from flask import Flask, g, make_response, redirect, render_template, request, u
 
 from . import db, geocode
 from .categorise import CATEGORIES
+from .categorise_activity import CATEGORIES as ACTIVITY_CATEGORIES
 from .pipeline import explore_route
 from .tfl_client import RouteNotFoundError
 from .walkplan import build_plan
+from .whatcanido import PlaceNotFoundError, _search_key, find_activities
 
 app = Flask(__name__)
 db.init_db()
@@ -174,6 +176,73 @@ def walk_plan(line_id):
     )
 
 
+@app.route("/what-can-i-do")
+def what_can_i_do():
+    return render_template("whatcanido_index.html", categories=ACTIVITY_CATEGORIES)
+
+
+@app.route("/find-activities", methods=["POST"])
+def find_activities_route():
+    place_name = request.form.get("place_name", "").strip()
+    max_walk_to_stop_m = int(request.form.get("max_walk_to_stop_m", 500))
+    max_walk_from_stop_m = int(request.form.get("max_walk_from_stop_m", 1000))
+    selected_categories = request.form.getlist("categories") or ACTIVITY_CATEGORIES
+
+    if not place_name:
+        return render_template(
+            "whatcanido_index.html", categories=ACTIVITY_CATEGORIES,
+            error="Please enter a starting place.",
+        )
+
+    search_key = _search_key(place_name)
+    cached = db.max_explored_journey_walk_m(search_key)
+
+    if cached and cached[0] >= max_walk_to_stop_m and cached[1] >= max_walk_from_stop_m:
+        return redirect(
+            url_for(
+                "activity_results", search_key=search_key,
+                walk_from=max_walk_from_stop_m, categories=selected_categories,
+            )
+        )
+
+    try:
+        result = find_activities(place_name, max_walk_to_stop_m, max_walk_from_stop_m)
+    except PlaceNotFoundError as e:
+        return render_template(
+            "whatcanido_index.html", categories=ACTIVITY_CATEGORIES, error=str(e)
+        )
+    except RuntimeError as e:
+        return render_template(
+            "whatcanido_index.html", categories=ACTIVITY_CATEGORIES,
+            error=f"Could not fetch candidate places right now ({e}). Please try again shortly.",
+        )
+
+    return redirect(
+        url_for(
+            "activity_results", search_key=result["search_key"],
+            walk_from=max_walk_from_stop_m, categories=selected_categories,
+        )
+    )
+
+
+@app.route("/activities/<search_key>")
+def activity_results(search_key):
+    walk_from_m = request.args.get("walk_from", type=int)
+    categories = request.args.getlist("categories") or ACTIVITY_CATEGORIES
+
+    results = db.get_journey_results(search_key, g.visitor_name)
+    if walk_from_m:
+        results = [r for r in results if r["distance_m"] <= walk_from_m]
+    results = [r for r in results if r["category"] in categories]
+
+    return render_template(
+        "activities_results.html",
+        search_key=search_key,
+        results=results,
+        categories=categories,
+    )
+
+
 @app.route("/attraction/<path:attraction_id>")
 def attraction_detail(attraction_id):
     attraction = db.get_attraction(attraction_id, g.visitor_name)
@@ -191,7 +260,8 @@ def attraction_detail(attraction_id):
             attraction["address"] = address
 
     nearby = db.get_nearby(attraction_id)
-    return render_template("attraction.html", a=attraction, nearby=nearby)
+    is_activity = attraction["category"] in ACTIVITY_CATEGORIES
+    return render_template("attraction.html", a=attraction, nearby=nearby, is_activity=is_activity)
 
 
 @app.route("/attraction/<path:attraction_id>/visit", methods=["POST"])
