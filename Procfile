@@ -1,1 +1,1 @@
-web: gunicorn bus_explorer.app:app --bind 0.0.0.0:$PORT
+web: gunicorn bus_explorer.app:app --bind 0.0.0.0:$PORT --timeout 120
