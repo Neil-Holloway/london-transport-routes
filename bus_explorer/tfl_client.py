@@ -62,7 +62,7 @@ def get_route_branches(line_id):
     if line_id in _ROUTE_BRANCHES_CACHE:
         return _ROUTE_BRANCHES_CACHE[line_id]
 
-    seq = _fetch_json(f"/Line/{line_id}/Route/Sequence/all")
+    seq = _fetch_json(f"/Line/{urllib.parse.quote(line_id)}/Route/Sequence/all")
     if not seq:
         branches = None
     else:
