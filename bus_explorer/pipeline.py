@@ -82,49 +82,53 @@ def explore_route(route_number, max_walk_m):
     deduped.sort(key=lambda c: c["nearest_stop_index"])
 
     results = []
-    # One connection shared across the whole batch, rather than opening a
-    # fresh Postgres connection per upsert - a route can have dozens of
-    # candidates, and Supabase throttles/limits new connections per client
-    # in quick succession, which was stalling this loop for minutes
-    # (eventually hitting gunicorn's worker timeout) on larger routes.
+    attraction_rows = []
+    route_attraction_rows = []
+    for cand in deduped:
+        attraction_id = f"osm:{cand['osm_type']}:{cand['osm_id']}"
+        text = enrich.enrich(cand["tags"], cand["category"], cand["lat"], cand["lon"])
+        address = geocode.address_from_tags(cand["tags"])
+
+        attraction_rows.append(
+            {
+                "id": attraction_id,
+                "name": cand["name"],
+                "category": cand["category"],
+                "lat": cand["lat"],
+                "lon": cand["lon"],
+                "why": text["why"],
+                "history": text["history"],
+                "source_url": text["source_url"],
+                "address": address,
+                "osm_type": cand["osm_type"],
+                "osm_id": cand["osm_id"],
+            }
+        )
+        route_attraction_rows.append(
+            {
+                "line_id": line_id,
+                "attraction_id": attraction_id,
+                "nearest_stop_id": cand["nearest_stop"]["id"],
+                "nearest_stop_name": cand["nearest_stop"]["name"],
+                "distance_m": cand["distance_m"],
+                "walk_minutes": round(cand["distance_m"] / WALK_SPEED_M_PER_MIN, 1),
+                "sequence_index": cand["nearest_stop_index"],
+                "direction": main_branch["direction"],
+                "max_walk_m": max_walk_m,
+            }
+        )
+        results.append(attraction_id)
+
+    # One connection, and one round trip per table, rather than one
+    # connection (and one round trip) per row - a busy route can have
+    # dozens of candidates, and batching avoids both Supabase's throttling
+    # on rapid new connections and the aggregate round-trip latency of
+    # writing one row at a time (see whatcanido.find_activities, which hit
+    # exactly this on a well-connected interchange).
     with db.get_conn() as conn:
         db.clear_route_attractions(line_id, conn=conn)
-        for cand in deduped:
-            attraction_id = f"osm:{cand['osm_type']}:{cand['osm_id']}"
-            text = enrich.enrich(cand["tags"], cand["category"], cand["lat"], cand["lon"])
-            address = geocode.address_from_tags(cand["tags"])
-
-            db.upsert_attraction(
-                {
-                    "id": attraction_id,
-                    "name": cand["name"],
-                    "category": cand["category"],
-                    "lat": cand["lat"],
-                    "lon": cand["lon"],
-                    "why": text["why"],
-                    "history": text["history"],
-                    "source_url": text["source_url"],
-                    "address": address,
-                    "osm_type": cand["osm_type"],
-                    "osm_id": cand["osm_id"],
-                },
-                conn=conn,
-            )
-            db.upsert_route_attraction(
-                {
-                    "line_id": line_id,
-                    "attraction_id": attraction_id,
-                    "nearest_stop_id": cand["nearest_stop"]["id"],
-                    "nearest_stop_name": cand["nearest_stop"]["name"],
-                    "distance_m": cand["distance_m"],
-                    "walk_minutes": round(cand["distance_m"] / WALK_SPEED_M_PER_MIN, 1),
-                    "sequence_index": cand["nearest_stop_index"],
-                    "direction": main_branch["direction"],
-                    "max_walk_m": max_walk_m,
-                },
-                conn=conn,
-            )
-            results.append(attraction_id)
+        db.bulk_upsert_attractions(attraction_rows, conn=conn)
+        db.bulk_upsert_route_attractions(route_attraction_rows, conn=conn)
 
     origin, destination = tfl_client.principal_journey(resolved)
     return {

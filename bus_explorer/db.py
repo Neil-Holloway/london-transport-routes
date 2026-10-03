@@ -156,6 +156,42 @@ def upsert_attraction(attraction, conn=None):
     )
 
 
+def bulk_upsert_attractions(attractions, conn):
+    """Same upsert as upsert_attraction, but for a whole batch in one round
+    trip instead of one per row. A well-connected interchange (e.g.
+    Lewisham: ~25 distinct bus lines) can have hundreds of surviving
+    candidates - doing one DB round trip per row made the write phase alone
+    take long enough (on top of the Overpass fetch that comes before it) to
+    blow gunicorn's worker timeout, even after that fetch had already
+    succeeded. Requires an explicit conn (unlike the single-row functions)
+    since this is only ever meant to be called as part of a larger batch.
+    """
+    if not attractions:
+        return
+    rows = [
+        (
+            a["id"], a["name"], a["category"], a["lat"], a["lon"],
+            a.get("why"), a.get("history"), a.get("source_url"),
+            a.get("address"), a.get("osm_type"), a.get("osm_id"),
+        )
+        for a in attractions
+    ]
+    with conn.cursor() as cur:
+        psycopg2.extras.execute_values(
+            cur,
+            """
+            INSERT INTO attractions (id, name, category, lat, lon, why, history, source_url, address, osm_type, osm_id)
+            VALUES %s
+            ON CONFLICT (id) DO UPDATE SET
+                name=excluded.name, category=excluded.category, lat=excluded.lat, lon=excluded.lon,
+                why=excluded.why, history=excluded.history, source_url=excluded.source_url,
+                address=COALESCE(excluded.address, attractions.address),
+                osm_type=excluded.osm_type, osm_id=excluded.osm_id
+            """,
+            rows,
+        )
+
+
 def set_address(attraction_id, address):
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -190,6 +226,36 @@ def upsert_route_attraction(row, conn=None):
     )
 
 
+def bulk_upsert_route_attractions(rows, conn):
+    """Batched equivalent of upsert_route_attraction - see
+    bulk_upsert_attractions for why this exists.
+    """
+    if not rows:
+        return
+    values = [
+        (
+            r["line_id"], r["attraction_id"], r["nearest_stop_id"], r["nearest_stop_name"],
+            r["distance_m"], r["walk_minutes"], r["sequence_index"], r["direction"], r["max_walk_m"],
+        )
+        for r in rows
+    ]
+    with conn.cursor() as cur:
+        psycopg2.extras.execute_values(
+            cur,
+            """
+            INSERT INTO route_attractions
+                (line_id, attraction_id, nearest_stop_id, nearest_stop_name, distance_m, walk_minutes, sequence_index, direction, max_walk_m)
+            VALUES %s
+            ON CONFLICT (line_id, attraction_id) DO UPDATE SET
+                nearest_stop_id=excluded.nearest_stop_id, nearest_stop_name=excluded.nearest_stop_name,
+                distance_m=excluded.distance_m, walk_minutes=excluded.walk_minutes,
+                sequence_index=excluded.sequence_index, direction=excluded.direction,
+                max_walk_m=excluded.max_walk_m
+            """,
+            values,
+        )
+
+
 def clear_journey_attractions(search_key, conn=None):
     """Same purpose as clear_route_attractions, for What Can I Do searches:
     remove stale placement rows for this starting place before re-running
@@ -217,6 +283,41 @@ def upsert_journey_attraction(row, conn=None):
         """,
         row,
     )
+
+
+def bulk_upsert_journey_attractions(rows, conn):
+    """Batched equivalent of upsert_journey_attraction - see
+    bulk_upsert_attractions for why this exists. This is the table What Can
+    I Do writes to, so it's the one that actually mattered for the Lewisham
+    timeout.
+    """
+    if not rows:
+        return
+    values = [
+        (
+            r["search_key"], r["attraction_id"], r["line_id"], r["direction"],
+            r["destination_stop_name"], r["distance_m"], r["walk_minutes"],
+            r["max_walk_to_stop_m"], r["max_walk_from_stop_m"],
+        )
+        for r in rows
+    ]
+    with conn.cursor() as cur:
+        psycopg2.extras.execute_values(
+            cur,
+            """
+            INSERT INTO journey_attractions
+                (search_key, attraction_id, line_id, direction, destination_stop_name,
+                 distance_m, walk_minutes, max_walk_to_stop_m, max_walk_from_stop_m)
+            VALUES %s
+            ON CONFLICT (search_key, attraction_id) DO UPDATE SET
+                line_id=excluded.line_id, direction=excluded.direction,
+                destination_stop_name=excluded.destination_stop_name,
+                distance_m=excluded.distance_m, walk_minutes=excluded.walk_minutes,
+                max_walk_to_stop_m=excluded.max_walk_to_stop_m,
+                max_walk_from_stop_m=excluded.max_walk_from_stop_m
+            """,
+            values,
+        )
 
 
 def get_journey_results(search_key, visitor_name):
