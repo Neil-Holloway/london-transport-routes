@@ -88,6 +88,7 @@ def init_db():
                     date_visited TEXT,
                     note TEXT,
                     favourite INTEGER NOT NULL DEFAULT 0,
+                    ignored INTEGER NOT NULL DEFAULT 0,
                     updated_at TIMESTAMPTZ DEFAULT now(),
                     PRIMARY KEY (attraction_id, visitor_name)
                 );
@@ -122,6 +123,12 @@ def init_db():
                 cur.execute("ALTER TABLE visits ALTER COLUMN visitor_name SET NOT NULL")
                 cur.execute("ALTER TABLE visits DROP CONSTRAINT visits_pkey")
                 cur.execute("ALTER TABLE visits ADD PRIMARY KEY (attraction_id, visitor_name)")
+
+            # Migration for databases created before "ignore this item"
+            # existed - a results-page action to hide a place from listings
+            # without affecting its visited/favourite/note state.
+            if "ignored" not in visit_cols:
+                cur.execute("ALTER TABLE visits ADD COLUMN ignored INTEGER NOT NULL DEFAULT 0")
 
 
 def _run(conn, sql, params):
@@ -332,7 +339,7 @@ def get_journey_results(search_key, visitor_name):
                 FROM journey_attractions ja
                 JOIN attractions a ON a.id = ja.attraction_id
                 LEFT JOIN visits v ON v.attraction_id = a.id AND v.visitor_name = %s
-                WHERE ja.search_key = %s
+                WHERE ja.search_key = %s AND COALESCE(v.ignored, 0) = 0
                 ORDER BY ja.distance_m ASC
                 """,
                 (visitor_name, search_key),
@@ -372,7 +379,7 @@ def get_route_results(line_id, visitor_name):
                 FROM route_attractions ra
                 JOIN attractions a ON a.id = ra.attraction_id
                 LEFT JOIN visits v ON v.attraction_id = a.id AND v.visitor_name = %s
-                WHERE ra.line_id = %s
+                WHERE ra.line_id = %s AND COALESCE(v.ignored, 0) = 0
                 ORDER BY ra.sequence_index ASC
                 """,
                 (visitor_name, line_id),
@@ -424,18 +431,57 @@ def get_nearby(attraction_id, radius_m=1000, limit=10):
     return nearby[:limit]
 
 
-def set_visit(attraction_id, visitor_name, visited, date_visited=None, note=None, favourite=False):
+def set_visited(attraction_id, visitor_name, visited):
+    """Quick toggle for the results-page 'mark visited' button - a partial
+    update that only touches the visited flag, leaving any existing note,
+    favourite or ignored status on the row alone (unlike a full upsert of
+    every visit field at once).
+    """
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO visits (attraction_id, visitor_name, visited, date_visited, note, favourite, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, now())
+                INSERT INTO visits (attraction_id, visitor_name, visited, updated_at)
+                VALUES (%s, %s, %s, now())
                 ON CONFLICT (attraction_id, visitor_name) DO UPDATE SET
-                    visited=excluded.visited, date_visited=excluded.date_visited,
+                    visited=excluded.visited, updated_at=excluded.updated_at
+                """,
+                (attraction_id, visitor_name, int(visited)),
+            )
+
+
+def set_ignored(attraction_id, visitor_name, ignored):
+    """Hides (or restores) an attraction from this visitor's route/activity
+    results listings, independently of visited/favourite/note.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO visits (attraction_id, visitor_name, ignored, updated_at)
+                VALUES (%s, %s, %s, now())
+                ON CONFLICT (attraction_id, visitor_name) DO UPDATE SET
+                    ignored=excluded.ignored, updated_at=excluded.updated_at
+                """,
+                (attraction_id, visitor_name, int(ignored)),
+            )
+
+
+def set_note_favourite(attraction_id, visitor_name, note, favourite):
+    """Partial update for the attraction detail page's note/favourite form -
+    leaves visited/ignored alone (those are now set from the results-page
+    quick actions, see set_visited/set_ignored).
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO visits (attraction_id, visitor_name, note, favourite, updated_at)
+                VALUES (%s, %s, %s, %s, now())
+                ON CONFLICT (attraction_id, visitor_name) DO UPDATE SET
                     note=excluded.note, favourite=excluded.favourite, updated_at=excluded.updated_at
                 """,
-                (attraction_id, visitor_name, int(visited), date_visited, note, int(favourite)),
+                (attraction_id, visitor_name, note, int(favourite)),
             )
 
 
@@ -445,7 +491,9 @@ def get_all_visits(visitor_name, category=None, favourites_only=False, line_id=N
         FROM attractions a
         JOIN visits v ON v.attraction_id = a.id
     """
-    conditions = ["v.visited = 1", "v.visitor_name = %s"]
+    # "Ignored" is a hide-everywhere action, so it's excluded here too, not
+    # just from the route/activity results listings it was added for.
+    conditions = ["v.visited = 1", "v.visitor_name = %s", "COALESCE(v.ignored, 0) = 0"]
     params = [visitor_name]
     if line_id:
         query += " JOIN route_attractions ra ON ra.attraction_id = a.id"
@@ -457,7 +505,10 @@ def get_all_visits(visitor_name, category=None, favourites_only=False, line_id=N
     if favourites_only:
         conditions.append("v.favourite = 1")
     query += " WHERE " + " AND ".join(conditions)
-    query += " ORDER BY v.date_visited DESC"
+    # Mark-visited no longer records a date (see set_visited), so
+    # date_visited is now always empty for newly visited places - order by
+    # when the visit row last changed instead, which stays meaningful.
+    query += " ORDER BY v.updated_at DESC"
 
     with get_conn() as conn:
         with conn.cursor() as cur:

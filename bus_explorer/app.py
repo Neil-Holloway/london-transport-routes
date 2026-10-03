@@ -264,14 +264,37 @@ def attraction_detail(attraction_id):
     return render_template("attraction.html", a=attraction, nearby=nearby, is_activity=is_activity)
 
 
-@app.route("/attraction/<path:attraction_id>/visit", methods=["POST"])
-def mark_visit(attraction_id):
-    visited = request.form.get("visited") == "on"
-    date_visited = request.form.get("date_visited") or None
+@app.route("/attraction/<path:attraction_id>/toggle-visited", methods=["POST"])
+def toggle_visited(attraction_id):
+    """Quick 'mark visited' / 'undo' action from a results-page card - no
+    date is recorded (dropped per the request to simplify this to a single
+    click), unlike the old detail-page form this replaces.
+    """
+    visited = request.form.get("visited") == "1"
+    db.set_visited(attraction_id, g.visitor_name, visited)
+
+    return_to = request.form.get("return_to") or url_for("attraction_detail", attraction_id=attraction_id)
+    return redirect(return_to)
+
+
+@app.route("/attraction/<path:attraction_id>/ignore", methods=["POST"])
+def ignore_attraction(attraction_id):
+    """Hides this attraction from the current visitor's results listings
+    (see db.set_ignored and the ignored filter in get_route_results /
+    get_journey_results / get_all_visits).
+    """
+    db.set_ignored(attraction_id, g.visitor_name, True)
+
+    return_to = request.form.get("return_to") or url_for("index")
+    return redirect(return_to)
+
+
+@app.route("/attraction/<path:attraction_id>/note", methods=["POST"])
+def save_note(attraction_id):
     note = request.form.get("note") or None
     favourite = request.form.get("favourite") == "on"
 
-    db.set_visit(attraction_id, g.visitor_name, visited, date_visited, note, favourite)
+    db.set_note_favourite(attraction_id, g.visitor_name, note, favourite)
 
     return_to = request.form.get("return_to") or url_for("attraction_detail", attraction_id=attraction_id)
     return redirect(return_to)

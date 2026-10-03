@@ -14,31 +14,44 @@
 {% endif %}
 
 {% if results %}
-<form method="post" action="{{ url_for('create_walk_plan') }}">
+<form id="walk-plan-form" method="post" action="{{ url_for('create_walk_plan') }}">
   <input type="hidden" name="line_id" value="{{ line_id }}">
   <div class="walk-plan-bar">
     <button type="submit">Build walking plan for selected</button>
     <span class="hint">Tick the places you want to visit, then build a printable walk plan.</span>
   </div>
-
-  <div class="result-list">
-    {% for r in results %}
-    <div class="card result">
-      <label class="walk-select"><input type="checkbox" name="attraction_ids" value="{{ r.id }}"> Add to walk</label>
-      <h2><a href="{{ url_for('attraction_detail', attraction_id=r.id) }}">{{ r.name }}</a></h2>
-      {% if r.address %}<div class="address">{{ r.address }}</div>{% endif %}
-      <div class="meta">{{ r.nearest_stop_name }}</div>
-      <div class="category">{{ r.category }}</div>
-      <div class="distance">{{ r.distance_m | round | int }} m / approximately {{ r.walk_minutes }} minutes from the bus</div>
-      <p class="why">{{ r.why }}</p>
-      <div class="status">
-        {% if r.visited %}✓ Visited{% else %}○ Not visited{% endif %}
-        {% if r.favourite %}★{% endif %}
-      </div>
-      <a class="more-info" href="{{ url_for('attraction_detail', attraction_id=r.id) }}">Show map and more information</a>
-    </div>
-    {% endfor %}
-  </div>
 </form>
+
+<div class="result-list">
+  {% for r in results %}
+  <div class="card result">
+    <label class="walk-select"><input type="checkbox" name="attraction_ids" value="{{ r.id }}" form="walk-plan-form"> Add to walk</label>
+    <h2><a href="{{ url_for('attraction_detail', attraction_id=r.id) }}">{{ r.name }}</a></h2>
+    {% if r.address %}<div class="address">{{ r.address }}</div>{% endif %}
+    <div class="meta">{{ r.nearest_stop_name }}</div>
+    <div class="category">{{ r.category }}</div>
+    <div class="distance">{{ r.distance_m | round | int }} m / approximately {{ r.walk_minutes }} minutes from the bus</div>
+    <p class="why">{{ r.why }}</p>
+    <div class="status">
+      {% if r.favourite %}★{% endif %}
+      <form method="post" action="{{ url_for('toggle_visited', attraction_id=r.id) }}" class="inline-form">
+        <input type="hidden" name="return_to" value="{{ request.full_path }}">
+        {% if r.visited %}
+          <input type="hidden" name="visited" value="0">
+          <button type="submit">✓ Visited (undo)</button>
+        {% else %}
+          <input type="hidden" name="visited" value="1">
+          <button type="submit">Mark visited</button>
+        {% endif %}
+      </form>
+      <form method="post" action="{{ url_for('ignore_attraction', attraction_id=r.id) }}" class="inline-form">
+        <input type="hidden" name="return_to" value="{{ request.full_path }}">
+        <button type="submit">Ignore</button>
+      </form>
+    </div>
+    <a class="more-info" href="{{ url_for('attraction_detail', attraction_id=r.id) }}">Show map and more information</a>
+  </div>
+  {% endfor %}
+</div>
 {% endif %}
 {% endblock %}

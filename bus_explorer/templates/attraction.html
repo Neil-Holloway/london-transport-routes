@@ -42,15 +42,8 @@
 
 <section class="card">
   <h2>Your visit</h2>
-  <form method="post" action="{{ url_for('mark_visit', attraction_id=a.id) }}">
-    <label>
-      <input type="checkbox" name="visited" {{ 'checked' if a.visited }}>
-      Visited
-    </label>
-    <label>
-      Date visited (optional)
-      <input type="date" name="date_visited" value="{{ a.date_visited or '' }}">
-    </label>
+  <div class="status">{% if a.visited %}✓ Visited{% else %}○ Not visited{% endif %}</div>
+  <form method="post" action="{{ url_for('save_note', attraction_id=a.id) }}">
     <label>
       My note (optional)
       <textarea name="note">{{ a.note or '' }}</textarea>

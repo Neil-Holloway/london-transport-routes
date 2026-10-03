@@ -55,7 +55,9 @@ main { max-width: 720px; margin: 0 auto; padding: 24px; }
 .result .meta, .result .category, .result .distance, .result .address { font-size: 0.85em; color: #666; }
 .address { font-size: 0.9em; color: #555; margin-bottom: 8px; }
 .result .why { margin: 8px 0; }
-.status { font-size: 0.9em; margin-top: 8px; }
+.status { font-size: 0.9em; margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.status .inline-form { display: inline; margin: 0; }
+.status .inline-form button { font-size: 0.85em; padding: 4px 10px; border-radius: 6px; border: 1px solid #ccc; background: #f5f5f5; cursor: pointer; }
 .more-info { font-size: 0.85em; }
 
 .filters { display: flex; gap: 16px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
