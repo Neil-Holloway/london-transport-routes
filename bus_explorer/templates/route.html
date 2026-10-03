@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}Route {{ line_id }} — Bus Explorer{% endblock %}
+{% block title %}{{ line_label }} — Bus Explorer{% endblock %}
 {% block content %}
-<h1>{{ line_id|upper }}{% if results %} — {{ results[0].nearest_stop_name }} ...{% endif %}</h1>
+<h1>{{ line_label }}{% if results %} — {{ results[0].nearest_stop_name }} ...{% endif %}</h1>
 
 <div class="tabs">
   <a class="{{ 'active' if view == 'highlights' }}" href="{{ url_for('route_results', line_id=line_id, walk=walk_m, view='highlights', categories=categories, show_visited=show_visited, show_ignored=show_ignored) }}">Highlights</a>
@@ -30,7 +30,7 @@
     {% if r.address %}<div class="address">{{ r.address }}</div>{% endif %}
     <div class="meta">{{ r.nearest_stop_name }}</div>
     <div class="category">{{ r.category }}</div>
-    <div class="distance">{{ r.distance_m | round | int }} m / approximately {{ r.walk_minutes }} minutes from the bus</div>
+    <div class="distance">{{ r.distance_m | round | int }} m / approximately {{ r.walk_minutes }} minutes from the stop</div>
     <p class="why">{{ r.why }}</p>
     <div class="status">
       {% if r.favourite %}★{% endif %}

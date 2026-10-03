@@ -65,7 +65,7 @@ def find_activities(place_name, max_walk_to_stop_m, max_walk_from_stop_m, select
     nearby_stops = tfl_client.find_nearby_stops(origin_lat, origin_lon, max_walk_to_stop_m)
     if not nearby_stops:
         raise PlaceNotFoundError(
-            f"No bus stops found within {max_walk_to_stop_m} m of '{place_name}'."
+            f"No stops found within {max_walk_to_stop_m} m of '{place_name}'."
         )
 
     journeys = []
@@ -77,7 +77,7 @@ def find_activities(place_name, max_walk_to_stop_m, max_walk_from_stop_m, select
             )
 
     if not journeys:
-        raise PlaceNotFoundError(f"No onward bus journeys found from stops near '{place_name}'.")
+        raise PlaceNotFoundError(f"No onward journeys found from stops near '{place_name}'.")
 
     # One small bbox per bus line (both directions combined), not one bbox
     # enclosing every journey from every line - a well-connected place's

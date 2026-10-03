@@ -138,35 +138,67 @@ def _is_night_bus(line_id):
     Night routes often run much further/differently from their daytime
     equivalent (see Petts Wood's N199 reaching central London), which isn't
     the kind of local, during-the-day activity trip What Can I Do is for.
+    No tube/DLR/Overground/Elizabeth line/tram line id matches this pattern
+    (e.g. "northern" starts with 'n' but not 'n' + digit), so applying this
+    filter unconditionally to every mode is harmless.
     """
     return bool(_NIGHT_BUS_RE.match(line_id))
 
 
+_RAIL_MODE_LINE_IDS_CACHE = None
+
+
+def _rail_mode_line_ids():
+    """Line ids for Overground + Elizabeth line - the only two included
+    modes that share a NaptanRailStation stop type with excluded
+    national/international rail operators (e.g. Stratford's rail station
+    lists 'elizabeth' and 'mildmay' alongside 'c2c' and 'greater-anglia' in
+    the same stop's lines). Used by find_nearby_stops to filter a
+    NaptanRailStation's line list down to just the modes this app covers.
+
+    Fetched once and cached for the lifetime of the process, same pattern
+    as get_route_branches - this set is small and essentially static (it
+    last changed when Overground's lines were given names in 2024).
+    """
+    global _RAIL_MODE_LINE_IDS_CACHE
+    if _RAIL_MODE_LINE_IDS_CACHE is None:
+        data = _fetch_json("/Line/Mode/overground,elizabeth-line") or []
+        _RAIL_MODE_LINE_IDS_CACHE = {line["id"] for line in data}
+    return _RAIL_MODE_LINE_IDS_CACHE
+
+
 def find_nearby_stops(lat, lon, radius_m):
-    """Find bus stops within radius_m of (lat, lon), each with the bus
-    routes serving it.
+    """Find bus/tube/DLR/Overground/Elizabeth line/tram stops within
+    radius_m of (lat, lon), each with the routes serving it.
 
     Returns a list of {id, name, lat, lon, lines: [line_id, ...]}. Only
-    StopPoints that serve at least one (non-night) bus route are returned -
-    TfL's radius search also returns tube/rail/tram stops, which this app
-    has no use for, and night buses are deliberately excluded (see
-    _is_night_bus).
+    StopPoints that serve at least one in-scope, non-night-bus route are
+    returned. National rail and international rail (e.g. c2c, Greater
+    Anglia, Eurostar) are excluded even though they can share a station
+    with Overground/Elizabeth line - see _rail_mode_line_ids.
     """
     path = (
         f"/StopPoint?lat={lat}&lon={lon}&radius={radius_m}"
-        "&stopTypes=NaptanPublicBusCoachTram&modes=bus"
+        "&stopTypes=NaptanPublicBusCoachTram,NaptanMetroStation,NaptanRailStation"
+        "&modes=bus,tube,dlr,overground,elizabeth-line,tram"
     )
     data = _fetch_json(path)
     if not data:
         return []
 
+    rail_mode_ids = _rail_mode_line_ids()
+
     stops = []
     for sp in data.get("stopPoints", []):
-        lines = [
-            line["id"]
-            for line in sp.get("lines", [])
-            if line.get("id") and not _is_night_bus(line["id"])
-        ]
+        is_rail_station = sp.get("stopType") == "NaptanRailStation"
+        lines = []
+        for line in sp.get("lines", []):
+            line_id = line.get("id")
+            if not line_id or _is_night_bus(line_id):
+                continue
+            if is_rail_station and line_id not in rail_mode_ids:
+                continue  # national/international rail sharing this station
+            lines.append(line_id)
         if not lines:
             continue
         stops.append(
@@ -244,19 +276,114 @@ def journeys_from_stop(line_id, boarding_stop_id):
     return journeys
 
 
+_NON_BUS_LINE_ALIASES_CACHE = None
+_NON_BUS_LINE_INFO_CACHE = None
+
+
+def _fetch_non_bus_lines():
+    """Shared fetch behind _non_bus_line_aliases and _non_bus_line_info -
+    one /Line/Mode/... call covers both lookups built from it.
+    """
+    return _fetch_json("/Line/Mode/tube,dlr,overground,elizabeth-line,tram") or []
+
+
+def _non_bus_line_aliases():
+    """Map of lowercased user-typed name -> TfL line id, for tube/DLR/
+    Overground/Elizabeth line/tram. A bus route number already IS its own
+    line id (e.g. "358"), but the other modes' ids are names rather than
+    numbers (e.g. "victoria", "elizabeth", "tram"), and it's friendlier to
+    also accept "Victoria", "Victoria line", "Elizabeth Line" etc. than to
+    require the user know the exact raw id.
+
+    Fetched once and cached for the lifetime of the process, same pattern
+    as get_route_branches.
+    """
+    global _NON_BUS_LINE_ALIASES_CACHE
+    if _NON_BUS_LINE_ALIASES_CACHE is None:
+        aliases = {}
+        for line in _fetch_non_bus_lines():
+            line_id = line["id"]
+            name = line["name"].strip().lower()
+            aliases[line_id] = line_id
+            aliases[name] = line_id
+            if name.endswith(" line"):
+                # Elizabeth line's own name already ends in "line" - also
+                # accept it without the suffix ("elizabeth").
+                aliases[name[: -len(" line")]] = line_id
+            elif line["modeName"] == "tube":
+                # Tube line names are bare ("Victoria", "Central") - also
+                # accept the "<name> line" form most people would type.
+                aliases[f"{name} line"] = line_id
+        _NON_BUS_LINE_ALIASES_CACHE = aliases
+    return _NON_BUS_LINE_ALIASES_CACHE
+
+
+def _non_bus_line_info():
+    """Map of TfL line id -> {"name", "mode"}, for tube/DLR/Overground/
+    Elizabeth line/tram. Used by line_display_label to tell a bus route
+    apart from these - a bus's line id is just its route number, never one
+    of these ids.
+    """
+    global _NON_BUS_LINE_INFO_CACHE
+    if _NON_BUS_LINE_INFO_CACHE is None:
+        _NON_BUS_LINE_INFO_CACHE = {
+            line["id"]: {"name": line["name"], "mode": line["modeName"]}
+            for line in _fetch_non_bus_lines()
+        }
+    return _NON_BUS_LINE_INFO_CACHE
+
+
+def line_display_label(line_id):
+    """Human-readable label for a line id, used wherever a result needs to
+    say which service to catch (e.g. "Bus 358", "Victoria line", "DLR",
+    "Tram", "Mildmay"). Any id not recognised as tube/DLR/Overground/
+    Elizabeth line/tram is assumed to be a bus route number.
+    """
+    info = _non_bus_line_info().get(line_id)
+    if info is None:
+        return f"Bus {line_id.upper()}"
+    if info["mode"] == "tube":
+        return f"{info['name']} line"
+    if info["mode"] == "dlr":
+        return "DLR"
+    if info["mode"] == "tram":
+        return "Tram"
+    return info["name"]  # Overground lines and Elizabeth line are already full names
+
+
+def resolve_line_id(route_number):
+    """Resolve user-typed input to a TfL line id, without fetching the
+    route's stop sequence - just the alias lookup (see
+    _non_bus_line_aliases). Used wherever a line id is needed before
+    deciding whether to call resolve_route at all (e.g. explore()'s
+    already-explored-at-this-radius cache check in app.py) - that check
+    must use the same line id resolve_route would end up using, or a
+    route typed as an alias (e.g. "Victoria line") would never match its
+    own cached results (stored under "victoria").
+    """
+    typed = route_number.strip().lower()
+    return _non_bus_line_aliases().get(typed, typed)
+
+
 def resolve_route(route_number):
-    """Resolve a user-entered route number to branches with coordinates.
+    """Resolve a user-entered route number/name to branches with
+    coordinates. Covers bus route numbers (which are already their own
+    line id) and tube/DLR/Overground/Elizabeth line/tram, resolved via
+    _non_bus_line_aliases - e.g. "358", "victoria", "Victoria line" and
+    "DLR" all work.
 
     Returns a dict: {
         "line_id": ...,
         "branches": [ { direction, branchId, stops: [{id, name, lat, lon}] } ],
     }
-    Raises RouteNotFoundError if the route doesn't exist for London buses.
+    Raises RouteNotFoundError if the route doesn't exist on any covered mode.
     """
-    line_id = route_number.strip().lower()
+    line_id = resolve_line_id(route_number)
     cached_branches = get_route_branches(line_id)
     if not cached_branches:
-        raise RouteNotFoundError(f"No London bus route found matching '{route_number}'.")
+        raise RouteNotFoundError(
+            f"No London bus, tube, DLR, Overground, Elizabeth line or tram route found matching '{route_number}'."
+        )
 
     _fill_missing_coordinates(cached_branches)
 

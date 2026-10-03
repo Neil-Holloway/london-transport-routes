@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Walking plan — Route {{ line_id|upper }} — Bus Explorer{% endblock %}
+{% block title %}Walking plan — {{ line_label }} — Bus Explorer{% endblock %}
 {% block content %}
 
 <div class="walk-plan-header no-print">
-  <h1>Walking plan — Route {{ line_id|upper }}</h1>
+  <h1>Walking plan — {{ line_label }}</h1>
   <button type="button" onclick="window.print()">Print this pack</button>
 </div>
-<h1 class="print-only">Walking plan — Route {{ line_id|upper }}</h1>
+<h1 class="print-only">Walking plan — {{ line_label }}</h1>
 
 {% if not plan %}
   <p class="hint">No places selected. Go back to the route results and tick the places you'd like to visit.</p>
@@ -26,7 +26,7 @@
       <h2>{{ stop.stop_number }}. {{ stop.name }}</h2>
       {% if loop.first %}
         <div class="leg">
-          Starting point — nearest bus stop: {{ stop.nearest_stop_name }}
+          Starting point — nearest stop: {{ stop.nearest_stop_name }}
           <a class="no-print" href="https://www.google.com/maps/search/?api=1&query={{ stop.lat }},{{ stop.lon }}" target="_blank" rel="noopener">— get directions</a>
         </div>
       {% else %}

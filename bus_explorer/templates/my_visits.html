@@ -15,11 +15,11 @@
     </select>
   </label>
   <label>
-    Bus route
+    Route
     <select name="route" onchange="this.form.submit()">
       <option value="">All</option>
       {% for r in routes %}
-      <option value="{{ r }}" {{ 'selected' if r == selected_route }}>{{ r|upper }}</option>
+      <option value="{{ r }}" {{ 'selected' if r == selected_route }}>{{ route_labels[r] }}</option>
       {% endfor %}
     </select>
   </label>

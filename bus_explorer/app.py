@@ -7,7 +7,7 @@ Run with:
 
 from flask import Flask, g, make_response, redirect, render_template, request, url_for
 
-from . import db, geocode
+from . import db, geocode, tfl_client
 from .categorise import CATEGORIES
 from .categorise_activity import CATEGORIES as ACTIVITY_CATEGORIES
 from .pipeline import explore_route
@@ -58,17 +58,17 @@ def explore():
 
     if not route_number:
         return render_template(
-            "index.html", categories=CATEGORIES, error="Please enter a bus route number."
+            "index.html", categories=CATEGORIES, error="Please enter a route."
         )
 
     if area and "london" not in area.lower():
         return render_template(
             "index.html",
             categories=CATEGORIES,
-            error="Only London bus routes are supported in this version.",
+            error="Only London bus, tube, DLR, Overground, Elizabeth line and tram routes are supported in this version.",
         )
 
-    line_id = route_number.strip().lower()
+    line_id = tfl_client.resolve_line_id(route_number)
     cached_walk_m = db.max_explored_walk_m(line_id)
 
     if cached_walk_m is not None and cached_walk_m >= max_walk_m:
@@ -134,6 +134,7 @@ def route_results(line_id):
     return render_template(
         "route.html",
         line_id=line_id,
+        line_label=tfl_client.line_display_label(line_id),
         results=results,
         view=view,
         walk_m=walk_m,
@@ -191,7 +192,8 @@ def walk_plan(line_id):
         )
 
     return render_template(
-        "walk_plan.html", line_id=line_id, plan=plan, totals=totals, maps_url=maps_url
+        "walk_plan.html", line_id=line_id, line_label=tfl_client.line_display_label(line_id),
+        plan=plan, totals=totals, maps_url=maps_url,
     )
 
 
@@ -261,6 +263,8 @@ def activity_results(search_key):
     results = [r for r in results if r["category"] in categories]
     if not show_visited:
         results = [r for r in results if not r["visited"]]
+    for r in results:
+        r["line_label"] = tfl_client.line_display_label(r["line_id"])
 
     return render_template(
         "activities_results.html",
@@ -339,11 +343,13 @@ def my_visits():
 
     visits = db.get_all_visits(g.visitor_name, category=category, favourites_only=favourites_only, line_id=line_id)
     routes = db.get_routes_explored()
+    route_labels = {r: tfl_client.line_display_label(r) for r in routes}
     return render_template(
         "my_visits.html",
         visits=visits,
         categories=CATEGORIES,
         routes=routes,
+        route_labels=route_labels,
         selected_category=category,
         favourites_only=favourites_only,
         selected_route=line_id,
