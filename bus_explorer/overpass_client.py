@@ -22,11 +22,21 @@ leads the list instead: it has correct UK data and isn't Hetzner-hosted, so
 it's a plausible candidate for being reachable from Render where the
 Hetzner mirrors aren't, though this hasn't yet been confirmed against
 Render's network specifically (only from a non-Render network). The
-unreachable Hetzner mirrors are kept after it since they fail near-instantly
-(cheap) and may work from a different host/region in future, but the
-mirrors that merely stall for 15s+ per attempt (kumi.systems,
-openstreetmap.ru, mail.ru, osm.vi-di.fr) are deliberately excluded - trying
-them wastes the whole retry budget for nothing.
+overpass.openstreetmap.fr was confirmed reachable from Render (Bickley and
+Petts Wood both succeeded), so the Hetzner mirrors have now been dropped
+entirely rather than just deprioritised: keeping proven-dead mirrors in the
+rotation wasn't just wasted retry time, it was actively misleading - once
+openstreetmap.fr itself failed or timed out, the error shown to the user was
+always whichever Hetzner mirror failed last (always "Network is
+unreachable"), masking the real reason openstreetmap.fr didn't answer. That
+masking is exactly what happened with Lewisham: a major interchange's
+"What Can I Do" query spans ~25 distinct bus lines (one bbox per line, see
+_build_multi_bbox_query), producing a ~55KB Overpass query that legitimately
+takes 50-60+ seconds for the server to compute - far past the old 25s
+per-attempt timeout - so it timed out on the one real mirror and fell
+through to the dead ones, surfacing a "network unreachable" error that had
+nothing to do with the actual problem (see find_candidates_multi_bbox's
+longer default timeout below).
 """
 
 import json
@@ -38,8 +48,6 @@ import uuid
 
 MIRRORS = [
     "https://overpass.openstreetmap.fr/api/interpreter",
-    "https://lz4.overpass-api.de/api/interpreter",
-    "https://overpass-api.de/api/interpreter",
 ]
 
 USER_AGENT = "BusExplorer/0.1 (https://github.com/Georege-Holloway/london-transport-routes)"
@@ -116,10 +124,10 @@ def _execute(query, rounds=1, timeout=25):
     retrying any of them again - a mirror that's briefly overloaded gets a
     second chance only after the others have already been tried, rather
     than burning the retry budget hammering the same slow mirror twice in a
-    row. `timeout` is deliberately shorter than Overpass's own
-    [timeout:50] query budget so a stuck mirror fails fast enough to leave
-    time for `rounds` > 1 to actually help within the app's own request
-    timeout, rather than one hung attempt eating the whole budget.
+    row. `timeout` should comfortably cover how long the query actually
+    takes to compute server-side (see find_candidates_multi_bbox for why
+    that varies a lot by query size) - too short and a mirror that would
+    have answered correctly just gets abandoned mid-computation.
     """
     body = urllib.parse.urlencode({"data": query}).encode()
 
@@ -159,22 +167,26 @@ def find_candidates(min_lat, min_lon, max_lat, max_lon, retries_per_mirror=1, cl
     return _execute(query, rounds=retries_per_mirror)
 
 
-def find_candidates_multi_bbox(bboxes, retries_per_mirror=2, clauses=None):
+def find_candidates_multi_bbox(bboxes, retries_per_mirror=2, clauses=None, timeout=65):
     """Query Overpass for candidate POIs across several bounding boxes in a
     single request. See _build_multi_bbox_query for why this exists.
 
-    bboxes is a list of (min_lat, min_lon, max_lat, max_lon) tuples.
-    Defaults to two rounds through all mirrors (see _execute) - What Can I
-    Do's combined-bbox queries are heavier than a single-route heritage
-    search and were seen failing in production against mirrors that worked
-    fine from elsewhere, so a single pass per mirror wasn't resilient enough.
+    bboxes is a list of (min_lat, min_lon, max_lat, max_lon) tuples - one per
+    distinct bus line reachable from the starting place. A well-connected
+    interchange (e.g. Lewisham: ~25 distinct lines) produces a correspondingly
+    large combined query that was measured taking 50-60+ seconds for Overpass
+    to compute - the default timeout is set well above that so a mirror
+    that's genuinely still working isn't abandoned mid-computation and
+    silently blamed on "network unreachable" from the mirrors tried after it
+    (see the module docstring). Defaults to two attempts (see _execute) so a
+    single transient failure doesn't fail the whole search.
 
     Returns a deduplicated list of dicts: {id, type, lat, lon, tags} - the
     same OSM element can legitimately fall inside more than one journey's
     box (routes often share stretches of road).
     """
     query = _build_multi_bbox_query(bboxes, clauses or INTERESTING_QUERY_CLAUSES)
-    elements = _execute(query, rounds=retries_per_mirror)
+    elements = _execute(query, rounds=retries_per_mirror, timeout=timeout)
 
     seen = set()
     deduped = []
