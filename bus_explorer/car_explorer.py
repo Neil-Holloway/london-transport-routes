@@ -20,6 +20,7 @@ already answers for a bus route, just without a route.
 import math
 import re
 import time
+from collections import defaultdict
 
 from . import area_filter, categorise, db, enrich, geocode, overpass_client, scoring
 
@@ -69,6 +70,48 @@ MAX_ENRICHED = 75
 
 def _log(label, start):
     print(f"[car_explorer] {label}: {time.time() - start:.1f}s elapsed", flush=True)
+
+
+def _quota_cap(items, total_cap):
+    """Cap items to total_cap, split roughly evenly across CAR_CATEGORIES
+    rather than by raw score alone.
+
+    scoring.intrinsic_score() gives historic-tagged places (and, to a lesser
+    extent, museums) a much higher baseline score than parks or Unusual/Other
+    (tourism=attraction, man_made=pier) ever get - across Explore's full
+    18-category list that imbalance is diluted, but restricted to just these
+    4 categories it means a plain score-sorted cap lets Historic buildings
+    fill nearly every slot, crowding Parks and Unusual out entirely (measured
+    against a 10-mile Beckenham search: 0 of either survived to the final
+    75). Giving each category its own quota first, then only handing out
+    leftover slots (from a category with fewer candidates than its quota) to
+    whichever other categories still have surplus, keeps every category
+    represented while still favouring the best-scoring candidates within
+    each one.
+    """
+    by_category = defaultdict(list)
+    for item in items:
+        by_category[item["category"]].append(item)
+    for group in by_category.values():
+        group.sort(key=lambda c: -c["score"])
+
+    n = len(CAR_CATEGORIES)
+    base_quota, remainder = divmod(total_cap, n)
+    quotas = {cat: base_quota + (1 if i < remainder else 0) for i, cat in enumerate(CAR_CATEGORIES)}
+
+    selected = []
+    leftover = []
+    for cat in CAR_CATEGORIES:
+        group = by_category.get(cat, [])
+        quota = quotas[cat]
+        selected.extend(group[:quota])
+        leftover.extend(group[quota:])
+
+    shortfall = total_cap - len(selected)
+    if shortfall > 0:
+        leftover.sort(key=lambda c: -c["score"])
+        selected.extend(leftover[:shortfall])
+    return selected
 
 
 def _search_key(place_name):
@@ -129,9 +172,11 @@ def find_by_car(place_name, radius_m):
     # before enrich() - a dense bbox can leave hundreds of candidates here,
     # and both of those steps scale with however many are passed in. A
     # couple of genuinely interesting but low-scoring places just outside
-    # the cap may be missed; see MAX_PRE_FILTER's comment above.
-    candidates.sort(key=lambda c: -c["score"])
-    candidates = candidates[:MAX_PRE_FILTER]
+    # the cap may be missed; see MAX_PRE_FILTER's comment above. Capped per
+    # category (see _quota_cap) rather than by raw score, so Historic
+    # buildings' much higher baseline score can't crowd out Parks/Unusual
+    # before they even reach area_filter/dedupe.
+    candidates = _quota_cap(candidates, MAX_PRE_FILTER)
     _log(f"score/filter ({len(candidates)} kept)", t0)
 
     # Parks/gardens/nature reserves are only worth a special trip if they're
@@ -143,9 +188,9 @@ def find_by_car(place_name, radius_m):
     _log(f"dedupe ({len(deduped)} kept)", t0)
 
     # Cap to the best-scoring candidates before the expensive enrich() pass
-    # (see MAX_ENRICHED), then switch to distance order for display/storage.
-    deduped.sort(key=lambda c: -c["score"])
-    deduped = deduped[:MAX_ENRICHED]
+    # (see MAX_ENRICHED), again per category (see _quota_cap), then switch to
+    # distance order for display/storage.
+    deduped = _quota_cap(deduped, MAX_ENRICHED)
     deduped.sort(key=lambda c: c["distance_m"])
 
     search_key = _search_key(place_name)
