@@ -85,7 +85,7 @@ ACTIVITY_QUERY_CLAUSES = [
 ]
 
 
-def _build_query(min_lat, min_lon, max_lat, max_lon, clauses):
+def _build_query(min_lat, min_lon, max_lat, max_lon, clauses, timeout_s=50):
     bbox = f"({min_lat},{min_lon},{max_lat},{max_lon})"
     parts = []
     for clause in clauses:
@@ -98,15 +98,25 @@ def _build_query(min_lat, min_lon, max_lat, max_lon, clauses):
     # a "duplicate_query" error instead of running it, which would otherwise
     # make retries (either ours or a user re-submitting the same search)
     # pointless.
-    return f"[out:json][timeout:50];\n// nonce:{uuid.uuid4()}\n({body}\n);\nout center tags;"
+    #
+    # timeout_s is Overpass's own server-side query budget, not a client
+    # HTTP timeout - if the server's own computation runs past it, it
+    # returns a normal HTTP 200 with an *empty* "elements" list and a
+    # "remark" explaining the timeout, which looks exactly like "nothing
+    # found" to _normalise_elements. The caller's client-side timeout (see
+    # _execute) must be set comfortably above this value, or the query gets
+    # silently truncated long before the client would even give up waiting.
+    return f"[out:json][timeout:{timeout_s}];\n// nonce:{uuid.uuid4()}\n({body}\n);\nout center tags;"
 
 
-def _build_multi_bbox_query(bboxes, clauses):
+def _build_multi_bbox_query(bboxes, clauses, timeout_s=50):
     """Like _build_query, but for several bounding boxes in one query -
     e.g. one small box per bus journey, rather than one box enclosing every
     journey combined (which balloons to the size of the widest-spread
     journeys and ends up querying huge swathes of empty area between
     unrelated routes - see What Can I Do spec, section 4 performance note).
+
+    See _build_query for what timeout_s actually controls.
     """
     parts = []
     for min_lat, min_lon, max_lat, max_lon in bboxes:
@@ -116,7 +126,7 @@ def _build_multi_bbox_query(bboxes, clauses):
             parts.append(f"way{clause}{bbox};")
     body = "\n".join(parts)
     # See _build_query for why the nonce comment is here.
-    return f"[out:json][timeout:50];\n// nonce:{uuid.uuid4()}\n({body}\n);\nout center tags;"
+    return f"[out:json][timeout:{timeout_s}];\n// nonce:{uuid.uuid4()}\n({body}\n);\nout center tags;"
 
 
 def _execute(query, rounds=1, timeout=25):
@@ -140,53 +150,73 @@ def _execute(query, rounds=1, timeout=25):
                 )
                 with urllib.request.urlopen(req, timeout=timeout) as resp:
                     data = json.loads(resp.read())
+                if not data.get("elements") and data.get("remark"):
+                    # Overpass hit its own [timeout:N] query budget (see
+                    # _build_query) - this is a normal HTTP 200 with an empty
+                    # elements list and a "remark" explaining the server-side
+                    # timeout, which otherwise looks identical to "genuinely
+                    # found nothing". Treat it as a retryable failure (and,
+                    # if every attempt hits this, an honest error) rather
+                    # than silently telling the user there's nothing nearby.
+                    raise TimeoutError(data["remark"])
                 return _normalise_elements(data.get("elements", []))
             except (OSError, ValueError) as e:
-                # OSError covers HTTPError/URLError plus socket.timeout, which
-                # on Python <3.10 is a distinct class from TimeoutError and
-                # would otherwise escape uncaught, skipping remaining
-                # mirrors/retries and crashing the request. ValueError covers
-                # json.JSONDecodeError - some mirrors return an HTML/XML error
-                # body instead of JSON (e.g. a "duplicate_query" rejection),
-                # which should also be treated as a retryable mirror failure
-                # rather than crashing the request.
+                # OSError covers HTTPError/URLError plus socket.timeout and
+                # the TimeoutError raised above for a server-side query
+                # timeout (TimeoutError is itself an OSError subclass).
+                # ValueError covers json.JSONDecodeError - some mirrors
+                # return an HTML/XML error body instead of JSON (e.g. a
+                # "duplicate_query" rejection) - which should also be
+                # treated as a retryable mirror failure rather than
+                # crashing the request.
                 last_error = e
                 time.sleep(2)
     raise RuntimeError(f"Overpass query failed on all mirrors: {last_error}")
 
 
-def find_candidates(min_lat, min_lon, max_lat, max_lon, retries_per_mirror=1, clauses=None):
+def find_candidates(min_lat, min_lon, max_lat, max_lon, retries_per_mirror=1, clauses=None, timeout_s=50):
     """Query Overpass for candidate POIs in a bounding box.
 
     clauses defaults to INTERESTING_QUERY_CLAUSES (Bus Explorer's heritage
     search); pass ACTIVITY_QUERY_CLAUSES for What Can I Do.
 
+    timeout_s is Overpass's own server-side query budget (see _build_query);
+    the client-side HTTP timeout is set a little above it so a mirror that's
+    still genuinely computing isn't abandoned before the server's own
+    timeout would even fire.
+
     Returns a list of dicts: {id, type, lat, lon, tags}.
     """
-    query = _build_query(min_lat, min_lon, max_lat, max_lon, clauses or INTERESTING_QUERY_CLAUSES)
-    return _execute(query, rounds=retries_per_mirror)
+    query = _build_query(min_lat, min_lon, max_lat, max_lon, clauses or INTERESTING_QUERY_CLAUSES, timeout_s=timeout_s)
+    return _execute(query, rounds=retries_per_mirror, timeout=timeout_s + 15)
 
 
-def find_candidates_multi_bbox(bboxes, retries_per_mirror=2, clauses=None, timeout=65):
+def find_candidates_multi_bbox(bboxes, retries_per_mirror=1, clauses=None, timeout_s=90):
     """Query Overpass for candidate POIs across several bounding boxes in a
     single request. See _build_multi_bbox_query for why this exists.
 
     bboxes is a list of (min_lat, min_lon, max_lat, max_lon) tuples - one per
     distinct bus line reachable from the starting place. A well-connected
     interchange (e.g. Lewisham: ~25 distinct lines) produces a correspondingly
-    large combined query that was measured taking 50-60+ seconds for Overpass
-    to compute - the default timeout is set well above that so a mirror
-    that's genuinely still working isn't abandoned mid-computation and
-    silently blamed on "network unreachable" from the mirrors tried after it
-    (see the module docstring). Defaults to two attempts (see _execute) so a
-    single transient failure doesn't fail the whole search.
+    large combined query that was measured taking 50+ seconds for Overpass to
+    compute - timeout_s (Overpass's own server-side budget, see _build_query)
+    defaults well above that, and the client-side HTTP timeout is set a
+    little above timeout_s in turn, so a mirror that's genuinely still
+    computing isn't truncated mid-query and misread as "nothing nearby" (see
+    _execute's remark handling).
+
+    Defaults to a single attempt per mirror, not several: with only one
+    working mirror left (see MIRRORS), retrying an already-slow ~90s query a
+    second time risks the combined wait blowing gunicorn's own worker
+    timeout for no benefit - a transient network blip fails fast and is
+    worth retrying, but a genuine server-side timeout just repeats.
 
     Returns a deduplicated list of dicts: {id, type, lat, lon, tags} - the
     same OSM element can legitimately fall inside more than one journey's
     box (routes often share stretches of road).
     """
-    query = _build_multi_bbox_query(bboxes, clauses or INTERESTING_QUERY_CLAUSES)
-    elements = _execute(query, rounds=retries_per_mirror, timeout=timeout)
+    query = _build_multi_bbox_query(bboxes, clauses or INTERESTING_QUERY_CLAUSES, timeout_s=timeout_s)
+    elements = _execute(query, rounds=retries_per_mirror, timeout=timeout_s + 15)
 
     seen = set()
     deduped = []
