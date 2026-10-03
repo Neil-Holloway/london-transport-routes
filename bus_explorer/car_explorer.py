@@ -65,7 +65,7 @@ CAR_CATEGORIES = [
 # still turn up via Explore or What Can I Do, since attractions are shared
 # across all three searches.
 MAX_PRE_FILTER = 300
-MAX_ENRICHED = 75
+MAX_ENRICHED = 150
 
 
 def _log(label, start):
