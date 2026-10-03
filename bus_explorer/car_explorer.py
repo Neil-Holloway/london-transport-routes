@@ -27,6 +27,21 @@ class PlaceNotFoundError(Exception):
     pass
 
 
+# A car search's bbox is a circle around an arbitrary point, not a narrow
+# strip hugging a bus route - at radii as modest as 5 miles this routinely
+# surfaces 500+ surviving candidates (measured against Beckenham). Every
+# candidate gets enriched with sequential network calls (enrich.py -
+# Wikipedia, Wikidata, a web-search fallback), at roughly half a second
+# each - enriching all of them blew well past gunicorn's 180s worker
+# timeout (measured: 541 candidates took 284s) and surfaced to the user as
+# a plain "Internal Server Error". Capping to the best-scoring candidates
+# keeps response time bounded regardless of how dense an area is, at the
+# cost of dropping the long tail of least-notable places from that
+# particular search (they can still turn up via Explore or What Can I Do,
+# since attractions are shared across all three searches).
+MAX_ENRICHED = 75
+
+
 def _search_key(place_name):
     return re.sub(r"\s+", " ", place_name.strip().lower())
 
@@ -76,6 +91,11 @@ def find_by_car(place_name, radius_m):
     sized_candidates = area_filter.filter_by_area(candidates)
 
     deduped = scoring.dedupe(sized_candidates)
+
+    # Cap to the best-scoring candidates before the expensive enrich() pass
+    # (see MAX_ENRICHED), then switch to distance order for display/storage.
+    deduped.sort(key=lambda c: -c["score"])
+    deduped = deduped[:MAX_ENRICHED]
     deduped.sort(key=lambda c: c["distance_m"])
 
     search_key = _search_key(place_name)
