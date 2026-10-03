@@ -19,6 +19,7 @@ already answers for a bus route, just without a route.
 
 import math
 import re
+import time
 
 from . import area_filter, categorise, db, enrich, geocode, overpass_client, scoring
 
@@ -29,17 +30,27 @@ class PlaceNotFoundError(Exception):
 
 # A car search's bbox is a circle around an arbitrary point, not a narrow
 # strip hugging a bus route - at radii as modest as 5 miles this routinely
-# surfaces 500+ surviving candidates (measured against Beckenham). Every
-# candidate gets enriched with sequential network calls (enrich.py -
-# Wikipedia, Wikidata, a web-search fallback), at roughly half a second
-# each - enriching all of them blew well past gunicorn's 180s worker
-# timeout (measured: 541 candidates took 284s) and surfaced to the user as
-# a plain "Internal Server Error". Capping to the best-scoring candidates
-# keeps response time bounded regardless of how dense an area is, at the
-# cost of dropping the long tail of least-notable places from that
-# particular search (they can still turn up via Explore or What Can I Do,
-# since attractions are shared across all three searches).
+# surfaces 500+ surviving candidates (measured against Beckenham). Two
+# separate costs scale with that count and both risk exceeding gunicorn's
+# 180s worker timeout (surfaced to the user as a plain "Internal Server
+# Error"):
+#   1. area_filter.filter_by_area's extra Overpass geometry query and
+#      scoring.dedupe's pairwise comparisons, which run over every
+#      surviving candidate regardless of how many are ultimately enriched.
+#   2. enrich()'s sequential network calls (Wikipedia, Wikidata, a
+#      web-search fallback) per surviving candidate, at roughly half a
+#      second each - measured: enriching 541 candidates took 284s alone.
+# MAX_PRE_FILTER caps (1)'s input before the costly area/dedupe steps even
+# run; MAX_ENRICHED then caps (2) after dedupe. Both trim the long tail of
+# least-notable candidates from this particular search; those places can
+# still turn up via Explore or What Can I Do, since attractions are shared
+# across all three searches.
+MAX_PRE_FILTER = 300
 MAX_ENRICHED = 75
+
+
+def _log(label, start):
+    print(f"[car_explorer] {label}: {time.time() - start:.1f}s elapsed", flush=True)
 
 
 def _search_key(place_name):
@@ -53,13 +64,16 @@ def _bounding_box(lat, lon, radius_m):
 
 
 def find_by_car(place_name, radius_m):
+    t0 = time.time()
     coords = geocode.geocode_place(place_name)
     if not coords:
         raise PlaceNotFoundError(f"Could not find a place called '{place_name}'.")
     origin_lat, origin_lon = coords
+    _log("geocode", t0)
 
     bbox = _bounding_box(origin_lat, origin_lon, radius_m)
     raw_candidates = overpass_client.find_candidates(*bbox)
+    _log(f"overpass fetch ({len(raw_candidates)} raw)", t0)
 
     candidates = []
     for raw in raw_candidates:
@@ -86,11 +100,22 @@ def find_by_car(place_name, radius_m):
             }
         )
 
+    # Cap *before* the area-geometry and dedupe passes below, not just
+    # before enrich() - a dense bbox can leave hundreds of candidates here,
+    # and both of those steps scale with however many are passed in. A
+    # couple of genuinely interesting but low-scoring places just outside
+    # the cap may be missed; see MAX_PRE_FILTER's comment above.
+    candidates.sort(key=lambda c: -c["score"])
+    candidates = candidates[:MAX_PRE_FILTER]
+    _log(f"score/filter ({len(candidates)} kept)", t0)
+
     # Parks/gardens/nature reserves are only worth a special trip if they're
     # a decent size - see area_filter.py.
     sized_candidates = area_filter.filter_by_area(candidates)
+    _log(f"area_filter ({len(sized_candidates)} kept)", t0)
 
     deduped = scoring.dedupe(sized_candidates)
+    _log(f"dedupe ({len(deduped)} kept)", t0)
 
     # Cap to the best-scoring candidates before the expensive enrich() pass
     # (see MAX_ENRICHED), then switch to distance order for display/storage.
@@ -134,9 +159,12 @@ def find_by_car(place_name, radius_m):
     # One connection, and one round trip per table - see pipeline.py /
     # whatcanido.py for why this matters once a search returns more than a
     # handful of candidates.
+    _log(f"enrich ({len(deduped)} candidates)", t0)
+
     with db.get_conn() as conn:
         db.clear_car_attractions(search_key, conn=conn)
         db.bulk_upsert_attractions(attraction_rows, conn=conn)
         db.bulk_upsert_car_attractions(car_attraction_rows, conn=conn)
+    _log("db write", t0)
 
     return {"search_key": search_key, "place_name": place_name, "count": len(deduped)}
