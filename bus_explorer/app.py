@@ -305,12 +305,16 @@ def toggle_visited(attraction_id):
 
 
 @app.route("/attraction/<path:attraction_id>/ignore", methods=["POST"])
-def ignore_attraction(attraction_id):
-    """Hides this attraction from the current visitor's results listings
-    (see db.set_ignored and the ignored filter in get_route_results /
-    get_journey_results / get_all_visits).
+def toggle_ignored(attraction_id):
+    """Hides (or restores) this attraction from the current visitor's
+    results listings (see db.set_ignored and the ignored filter in
+    get_route_results / get_journey_results / get_all_visits). Toggles
+    both ways, same pattern as toggle_visited above - un-ignoring only
+    makes sense while the "show ignored" display option is on, since
+    that's the only way an ignored item is visible to click the button on.
     """
-    db.set_ignored(attraction_id, g.visitor_name, True)
+    ignored = request.form.get("ignored") == "1"
+    db.set_ignored(attraction_id, g.visitor_name, ignored)
 
     return_to = request.form.get("return_to") or url_for("index")
     return redirect(return_to)

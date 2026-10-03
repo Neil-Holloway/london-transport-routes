@@ -30,9 +30,15 @@
           <button type="submit">Mark visited</button>
         {% endif %}
       </form>
-      <form method="post" action="{{ url_for('ignore_attraction', attraction_id=r.id) }}" class="inline-form">
+      <form method="post" action="{{ url_for('toggle_ignored', attraction_id=r.id) }}" class="inline-form">
         <input type="hidden" name="return_to" value="{{ request.full_path }}">
-        <button type="submit">Ignore</button>
+        {% if r.ignored %}
+          <input type="hidden" name="ignored" value="0">
+          <button type="submit">Un-ignore</button>
+        {% else %}
+          <input type="hidden" name="ignored" value="1">
+          <button type="submit">Ignore</button>
+        {% endif %}
       </form>
     </div>
     <a class="more-info" href="{{ url_for('attraction_detail', attraction_id=r.id) }}">More information</a>
