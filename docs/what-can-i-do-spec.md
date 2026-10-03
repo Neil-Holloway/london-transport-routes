@@ -24,14 +24,14 @@ Motivation: a Freedom Pass gives free travel anywhere in London, but is only use
 
 They are two separate front doors into the same app, sharing the same underlying engine (place-finding, scoring, categorisation, per-visitor visited/favourite tracking) but answering genuinely different questions. Shops, cafes and restaurants are deliberately excluded from both — this is about places to go and things to do, not things to buy or eat.
 
-**A family of four searches.** What Can I Do is the second of what's turning into four related but distinct front doors into the app, all sharing the same engine:
+**A family of searches.** What Can I Do is the second of what was originally scoped as four related but distinct front doors into the app, all sharing the same engine:
 
 1. **What to discover** (existing Bus Explorer) — route-first, a walking itinerary of heritage points of interest along one known route.
 2. **What can I do** (this document) — place-first, single bus journey, a pick-one list of activities.
-3. **Parks** — place-first, single bus journey, large open spaces (over 10 hectares) worth a visit in their own right. See §10.
-4. **Parkrun** — place-first, single bus journey, simply confirming a parkrun exists and how to reach it. See §11.
+3. **Parks** — not built as a separate search; folded into searches 1 and 2 instead as a size/access-filtered category (>10ha, public-accessible only) rather than a dedicated fourth front door. See §10.
+4. **Parkrun** — dropped (2026-10-03). See §11.
 
-Searches 2, 3 and 4 share the same departure-point/single-bus-journey mechanism (§4) — only the candidate-finding query and category list differ between them.
+Search 2 shares the same departure-point/single-bus-journey mechanism (§4) that Parks and Parkrun would have used — only the candidate-finding query and category list differ.
 
 ## 3. Main screen
 
@@ -131,9 +131,11 @@ This is the most important boundary for this tool, learned the hard way from Bus
 
 Reuses Bus Explorer's existing per-attraction, per-visitor visited/note/favourite model exactly as built — visited status belongs to the place, not to which starting point or journey found it, consistent with Bus Explorer's "crucial rule" (spec section 6).
 
-## 10. Parks (third search)
+## 10. Parks (folded into searches 1 and 2, not a separate search)
 
-Same departure-point/single-bus-journey mechanism as §4, but a different question: not "what activity can I do" but "what's a large, worthwhile open space I could spend an afternoon in."
+**Status (2026-10-03): built, but not as a dedicated fourth front door.** Rather than a standalone Parks search sharing §4's departure-point/single-bus-journey mechanism, the size and access filtering described below was added directly to the existing Bus Explorer ("What to discover") and What Can I Do candidate pipelines — both already found `leisure=park/garden/nature_reserve` places (Bus Explorer always had; What Can I Do gained the category at the same time as this filter), and the problem being solved was that every named park/garden/nature_reserve was showing up, overwhelming the results list. The rest of this section (candidate finding, size filter, public accessibility) still describes the filtering logic accurately; only the "separate search" framing in the opening paragraph below is superseded.
+
+Originally specced as: same departure-point/single-bus-journey mechanism as §4, but a different question: not "what activity can I do" but "what's a large, worthwhile open space I could spend an afternoon in."
 
 **Candidate finding.** OSM tags only — `leisure=park`, `leisure=garden`, `leisure=nature_reserve`. Recreation grounds (`landuse=recreation_ground`) are deliberately excluded from this search even though they're open space, since the point here is parkland to wander, not a sports pitch (a recreation ground can still appear under §5's activity list instead).
 
@@ -143,9 +145,11 @@ Same departure-point/single-bus-journey mechanism as §4, but a different questi
 
 **Naming.** As with every other place in this app, the name shown is OSM's own `name` tag, never invented or inferred.
 
-## 11. Parkrun (fourth search)
+## 11. Parkrun (dropped)
 
-Same departure-point/single-bus-journey mechanism as §4, but the simplest possible content: does a parkrun exist here, and how do I reach it.
+**Status (2026-10-03): dropped.** Decided not to build this search for this app. The rest of this section is kept as a record of the original scoping, not a build plan.
+
+Originally specced as: same departure-point/single-bus-journey mechanism as §4, but the simplest possible content: does a parkrun exist here, and how do I reach it.
 
 **Scope — identification only.** This shows that a parkrun exists at a location and a link to its official page. It does not show times, results, or any schedule detail beyond the fixed, well-known convention that parkrun happens Saturdays at 9am — even that may be omitted rather than stated, since the point is existence, not event detail. This is consistent with §8's "no live events" boundary: a parkrun's existence at a place is a stable, slow-changing fact (like "this library exists"), not a live/transient one, provided only the fixed fact is shown.
 
