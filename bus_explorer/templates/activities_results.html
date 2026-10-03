@@ -19,6 +19,7 @@
     <p class="why">{{ r.why }}</p>
     <div class="status">
       {% if r.favourite %}★{% endif %}
+      {% if r.ignored %}<span class="ignored-tag">Ignored</span>{% endif %}
       <form method="post" action="{{ url_for('toggle_visited', attraction_id=r.id) }}" class="inline-form">
         <input type="hidden" name="return_to" value="{{ request.full_path }}">
         {% if r.visited %}

@@ -327,23 +327,24 @@ def bulk_upsert_journey_attractions(rows, conn):
         )
 
 
-def get_journey_results(search_key, visitor_name):
+def get_journey_results(search_key, visitor_name, include_ignored=False):
+    query = """
+        SELECT a.*, ja.line_id, ja.direction, ja.destination_stop_name,
+               ja.distance_m, ja.walk_minutes,
+               COALESCE(v.visited, 0) AS visited, v.date_visited, v.note,
+               COALESCE(v.favourite, 0) AS favourite, COALESCE(v.ignored, 0) AS ignored
+        FROM journey_attractions ja
+        JOIN attractions a ON a.id = ja.attraction_id
+        LEFT JOIN visits v ON v.attraction_id = a.id AND v.visitor_name = %s
+        WHERE ja.search_key = %s
+    """
+    if not include_ignored:
+        query += " AND COALESCE(v.ignored, 0) = 0"
+    query += " ORDER BY ja.distance_m ASC"
+
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT a.*, ja.line_id, ja.direction, ja.destination_stop_name,
-                       ja.distance_m, ja.walk_minutes,
-                       COALESCE(v.visited, 0) AS visited, v.date_visited, v.note,
-                       COALESCE(v.favourite, 0) AS favourite
-                FROM journey_attractions ja
-                JOIN attractions a ON a.id = ja.attraction_id
-                LEFT JOIN visits v ON v.attraction_id = a.id AND v.visitor_name = %s
-                WHERE ja.search_key = %s AND COALESCE(v.ignored, 0) = 0
-                ORDER BY ja.distance_m ASC
-                """,
-                (visitor_name, search_key),
-            )
+            cur.execute(query, (visitor_name, search_key))
             return [dict(r) for r in cur.fetchall()]
 
 
@@ -367,23 +368,24 @@ def max_explored_journey_walk_m(search_key):
             return row["to_m"], row["from_m"]
 
 
-def get_route_results(line_id, visitor_name):
+def get_route_results(line_id, visitor_name, include_ignored=False):
+    query = """
+        SELECT a.*, ra.nearest_stop_name, ra.distance_m, ra.walk_minutes,
+               ra.sequence_index, ra.direction,
+               COALESCE(v.visited, 0) AS visited, v.date_visited, v.note,
+               COALESCE(v.favourite, 0) AS favourite, COALESCE(v.ignored, 0) AS ignored
+        FROM route_attractions ra
+        JOIN attractions a ON a.id = ra.attraction_id
+        LEFT JOIN visits v ON v.attraction_id = a.id AND v.visitor_name = %s
+        WHERE ra.line_id = %s
+    """
+    if not include_ignored:
+        query += " AND COALESCE(v.ignored, 0) = 0"
+    query += " ORDER BY ra.sequence_index ASC"
+
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT a.*, ra.nearest_stop_name, ra.distance_m, ra.walk_minutes,
-                       ra.sequence_index, ra.direction,
-                       COALESCE(v.visited, 0) AS visited, v.date_visited, v.note,
-                       COALESCE(v.favourite, 0) AS favourite
-                FROM route_attractions ra
-                JOIN attractions a ON a.id = ra.attraction_id
-                LEFT JOIN visits v ON v.attraction_id = a.id AND v.visitor_name = %s
-                WHERE ra.line_id = %s AND COALESCE(v.ignored, 0) = 0
-                ORDER BY ra.sequence_index ASC
-                """,
-                (visitor_name, line_id),
-            )
+            cur.execute(query, (visitor_name, line_id))
             return [dict(r) for r in cur.fetchall()]
 
 

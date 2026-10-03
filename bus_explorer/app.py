@@ -53,6 +53,8 @@ def explore():
     area = request.form.get("area", "").strip()
     max_walk_m = int(request.form.get("max_walk_m", 1000))
     selected_categories = request.form.getlist("categories") or CATEGORIES
+    show_visited = "1" if request.form.get("show_visited") == "1" else "0"
+    show_ignored = "1" if request.form.get("show_ignored") == "1" else "0"
 
     if not route_number:
         return render_template(
@@ -73,7 +75,10 @@ def explore():
         # Already explored at this radius (or wider) - skip the slow
         # TfL + OpenStreetMap pipeline and use what's cached.
         return redirect(
-            url_for("route_results", line_id=line_id, walk=max_walk_m, categories=selected_categories)
+            url_for(
+                "route_results", line_id=line_id, walk=max_walk_m, categories=selected_categories,
+                show_visited=show_visited, show_ignored=show_ignored,
+            )
         )
 
     try:
@@ -93,6 +98,8 @@ def explore():
             line_id=result["line_id"],
             walk=max_walk_m,
             categories=selected_categories,
+            show_visited=show_visited,
+            show_ignored=show_ignored,
         )
     )
 
@@ -102,11 +109,18 @@ def route_results(line_id):
     walk_m = request.args.get("walk", type=int)
     view = request.args.get("view", "all")  # highlights | all | unvisited
     categories = request.args.getlist("categories") or CATEGORIES
+    # Defaults match the behaviour before these were toggleable from the
+    # front page: visited items shown, ignored items hidden.
+    show_visited = request.args.get("show_visited", "1") == "1"
+    show_ignored = request.args.get("show_ignored", "0") == "1"
 
-    results = db.get_route_results(line_id, g.visitor_name)
+    results = db.get_route_results(line_id, g.visitor_name, include_ignored=show_ignored)
     if walk_m:
         results = [r for r in results if r["distance_m"] <= walk_m]
     results = [r for r in results if r["category"] in categories]
+
+    if not show_visited:
+        results = [r for r in results if not r["visited"]]
 
     if view == "highlights":
         results = [r for r in results if r["category"] in (
@@ -124,6 +138,11 @@ def route_results(line_id):
         view=view,
         walk_m=walk_m,
         categories=categories,
+        # Passed as "1"/"0" strings (not bools) so the tabs' url_for calls
+        # round-trip them back into the same query-string form this route
+        # reads with request.args.get(...) == "1".
+        show_visited="1" if show_visited else "0",
+        show_ignored="1" if show_ignored else "0",
     )
 
 
@@ -187,6 +206,8 @@ def find_activities_route():
     max_walk_to_stop_m = int(request.form.get("max_walk_to_stop_m", 500))
     max_walk_from_stop_m = int(request.form.get("max_walk_from_stop_m", 1000))
     selected_categories = request.form.getlist("categories") or ACTIVITY_CATEGORIES
+    show_visited = "1" if request.form.get("show_visited") == "1" else "0"
+    show_ignored = "1" if request.form.get("show_ignored") == "1" else "0"
 
     if not place_name:
         return render_template(
@@ -202,6 +223,7 @@ def find_activities_route():
             url_for(
                 "activity_results", search_key=search_key,
                 walk_from=max_walk_from_stop_m, categories=selected_categories,
+                show_visited=show_visited, show_ignored=show_ignored,
             )
         )
 
@@ -221,6 +243,7 @@ def find_activities_route():
         url_for(
             "activity_results", search_key=result["search_key"],
             walk_from=max_walk_from_stop_m, categories=selected_categories,
+            show_visited=show_visited, show_ignored=show_ignored,
         )
     )
 
@@ -229,11 +252,15 @@ def find_activities_route():
 def activity_results(search_key):
     walk_from_m = request.args.get("walk_from", type=int)
     categories = request.args.getlist("categories") or ACTIVITY_CATEGORIES
+    show_visited = request.args.get("show_visited", "1") == "1"
+    show_ignored = request.args.get("show_ignored", "0") == "1"
 
-    results = db.get_journey_results(search_key, g.visitor_name)
+    results = db.get_journey_results(search_key, g.visitor_name, include_ignored=show_ignored)
     if walk_from_m:
         results = [r for r in results if r["distance_m"] <= walk_from_m]
     results = [r for r in results if r["category"] in categories]
+    if not show_visited:
+        results = [r for r in results if not r["visited"]]
 
     return render_template(
         "activities_results.html",

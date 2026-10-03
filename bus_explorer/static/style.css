@@ -58,6 +58,7 @@ main { max-width: 720px; margin: 0 auto; padding: 24px; }
 .status { font-size: 0.9em; margin-top: 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .status .inline-form { display: inline; margin: 0; }
 .status .inline-form button { font-size: 0.85em; padding: 4px 10px; border-radius: 6px; border: 1px solid #ccc; background: #f5f5f5; cursor: pointer; }
+.ignored-tag { font-size: 0.85em; color: #999; font-style: italic; }
 .more-info { font-size: 0.85em; }
 
 .filters { display: flex; gap: 16px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }

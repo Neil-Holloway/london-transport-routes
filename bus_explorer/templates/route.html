@@ -4,9 +4,9 @@
 <h1>{{ line_id|upper }}{% if results %} — {{ results[0].nearest_stop_name }} ...{% endif %}</h1>
 
 <div class="tabs">
-  <a class="{{ 'active' if view == 'highlights' }}" href="{{ url_for('route_results', line_id=line_id, walk=walk_m, view='highlights', categories=categories) }}">Highlights</a>
-  <a class="{{ 'active' if view == 'all' }}" href="{{ url_for('route_results', line_id=line_id, walk=walk_m, view='all', categories=categories) }}">All discoveries</a>
-  <a class="{{ 'active' if view == 'unvisited' }}" href="{{ url_for('route_results', line_id=line_id, walk=walk_m, view='unvisited', categories=categories) }}">Unvisited only</a>
+  <a class="{{ 'active' if view == 'highlights' }}" href="{{ url_for('route_results', line_id=line_id, walk=walk_m, view='highlights', categories=categories, show_visited=show_visited, show_ignored=show_ignored) }}">Highlights</a>
+  <a class="{{ 'active' if view == 'all' }}" href="{{ url_for('route_results', line_id=line_id, walk=walk_m, view='all', categories=categories, show_visited=show_visited, show_ignored=show_ignored) }}">All discoveries</a>
+  <a class="{{ 'active' if view == 'unvisited' }}" href="{{ url_for('route_results', line_id=line_id, walk=walk_m, view='unvisited', categories=categories, show_visited=show_visited, show_ignored=show_ignored) }}">Unvisited only</a>
 </div>
 
 {% if not results %}
@@ -34,6 +34,7 @@
     <p class="why">{{ r.why }}</p>
     <div class="status">
       {% if r.favourite %}★{% endif %}
+      {% if r.ignored %}<span class="ignored-tag">Ignored</span>{% endif %}
       <form method="post" action="{{ url_for('toggle_visited', attraction_id=r.id) }}" class="inline-form">
         <input type="hidden" name="return_to" value="{{ request.full_path }}">
         {% if r.visited %}
