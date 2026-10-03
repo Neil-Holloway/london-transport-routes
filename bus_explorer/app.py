@@ -8,6 +8,7 @@ Run with:
 from flask import Flask, g, make_response, redirect, render_template, request, url_for
 
 from . import db, geocode, tfl_client
+from .car_explorer import CAR_CATEGORIES
 from .car_explorer import PlaceNotFoundError as CarPlaceNotFoundError
 from .car_explorer import _search_key as _car_search_key
 from .car_explorer import find_by_car
@@ -279,20 +280,20 @@ def activity_results(search_key):
 
 @app.route("/car")
 def by_car():
-    return render_template("car_index.html", categories=CATEGORIES)
+    return render_template("car_index.html", categories=CAR_CATEGORIES)
 
 
 @app.route("/car/search", methods=["POST"])
 def car_search():
     place_name = request.form.get("place_name", "").strip()
     radius_m = int(request.form.get("radius_m", 8047))
-    selected_categories = request.form.getlist("categories") or CATEGORIES
+    selected_categories = request.form.getlist("categories") or CAR_CATEGORIES
     show_visited = "1" if request.form.get("show_visited") == "1" else "0"
     show_ignored = "1" if request.form.get("show_ignored") == "1" else "0"
 
     if not place_name:
         return render_template(
-            "car_index.html", categories=CATEGORIES, error="Please enter a starting place."
+            "car_index.html", categories=CAR_CATEGORIES, error="Please enter a starting place."
         )
 
     search_key = _car_search_key(place_name)
@@ -300,7 +301,10 @@ def car_search():
 
     if cached_radius_m is not None and cached_radius_m >= radius_m:
         # Already explored at this radius (or wider) - skip the slow
-        # OpenStreetMap pipeline and use what's cached.
+        # OpenStreetMap pipeline and use what's cached. The cached data was
+        # always fetched/scored across the full CAR_CATEGORIES set (category
+        # selection only narrows the Overpass query, not per-user), so this
+        # is safe regardless of which categories are selected this time.
         return redirect(
             url_for(
                 "car_results", search_key=search_key, radius=radius_m,
@@ -311,11 +315,11 @@ def car_search():
     try:
         result = find_by_car(place_name, radius_m)
     except CarPlaceNotFoundError as e:
-        return render_template("car_index.html", categories=CATEGORIES, error=str(e))
+        return render_template("car_index.html", categories=CAR_CATEGORIES, error=str(e))
     except RuntimeError as e:
         return render_template(
             "car_index.html",
-            categories=CATEGORIES,
+            categories=CAR_CATEGORIES,
             error=f"Could not fetch candidate places right now ({e}). Please try again shortly.",
         )
 
@@ -330,7 +334,7 @@ def car_search():
 @app.route("/car/<search_key>")
 def car_results(search_key):
     radius_m = request.args.get("radius", type=int)
-    categories = request.args.getlist("categories") or CATEGORIES
+    categories = request.args.getlist("categories") or CAR_CATEGORIES
     show_visited = request.args.get("show_visited", "1") == "1"
     show_ignored = request.args.get("show_ignored", "0") == "1"
 

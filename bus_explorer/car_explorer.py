@@ -28,6 +28,24 @@ class PlaceNotFoundError(Exception):
     pass
 
 
+# Car is deliberately restricted to a subset of Explore's full heritage
+# category list: a car search's circular bbox surfaces far more candidates
+# than a bus route's narrow walk-distance strip (see MAX_PRE_FILTER/
+# MAX_ENRICHED below), and categories like churches, memorials and markets
+# are common enough to flood a 5-mile radius without being worth a special
+# drive. Restricting up front - both the Overpass clauses fetched (see
+# overpass_client.CAR_QUERY_CLAUSES) and the categorise() filter below - cuts
+# candidate volume before any of the expensive stages run, rather than just
+# filtering the display afterwards (which would waste MAX_ENRICHED's budget
+# enriching categories the user never gets to see).
+CAR_CATEGORIES = [
+    "Historic buildings",
+    "Museums and galleries",
+    "Parks, gardens and woodland",
+    "Unusual/Other",
+]
+
+
 # A car search's bbox is a circle around an arbitrary point, not a narrow
 # strip hugging a bus route - at radii as modest as 5 miles this routinely
 # surfaces 500+ surviving candidates (measured against Beckenham). Two
@@ -72,7 +90,9 @@ def find_by_car(place_name, radius_m):
     _log("geocode", t0)
 
     bbox = _bounding_box(origin_lat, origin_lon, radius_m)
-    raw_candidates = overpass_client.find_candidates(*bbox)
+    raw_candidates = overpass_client.find_candidates(
+        *bbox, clauses=overpass_client.CAR_QUERY_CLAUSES
+    )
     _log(f"overpass fetch ({len(raw_candidates)} raw)", t0)
 
     candidates = []
@@ -82,6 +102,11 @@ def find_by_car(place_name, radius_m):
         if dist > radius_m:
             continue  # the bbox is a rectangle; keep the search itself circular
         category = categorise.categorise(tags)
+        if category not in CAR_CATEGORIES:
+            # CAR_QUERY_CLAUSES still pulls some historic-tagged elements
+            # that categorise() routes to Archaeology/Memorials - drop those
+            # here rather than widening CAR_CATEGORIES to cover them.
+            continue
         total_score = scoring.score_candidate(tags, dist, radius_m)
         if total_score < scoring.MIN_SCORE:
             continue

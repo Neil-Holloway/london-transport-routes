@@ -69,6 +69,27 @@ INTERESTING_QUERY_CLAUSES = [
     '["natural"="water"]',
 ]
 
+# Tag values for Explore by car's restricted category set (see
+# car_explorer.CAR_CATEGORIES) - only the clauses that can actually produce a
+# candidate in one of those categories, per categorise.py:
+#   "historic"                      -> Historic buildings (also pulls some
+#                                       archaeological_site/memorial-tagged
+#                                       elements that categorise() routes
+#                                       elsewhere; car_explorer drops those)
+#   tourism museum/gallery/attraction -> Museums and galleries, Unusual/Other
+#   leisure park/garden/nature_reserve -> Parks, gardens and woodland
+#   man_made=pier                    -> Unusual/Other
+# Deliberately excludes memorial, waterway, the other man_made values,
+# amenity=place_of_worship/marketplace, landuse=cemetery and natural=water -
+# none of those can ever produce a candidate in the 4 allowed categories, so
+# there's no reason to pay for fetching them on every car search.
+CAR_QUERY_CLAUSES = [
+    '["historic"]',
+    '["tourism"~"^(museum|gallery|attraction)$"]',
+    '["leisure"~"^(park|garden|nature_reserve)$"]',
+    '["man_made"="pier"]',
+]
+
 # Tag values for What Can I Do's activity search (categorise_activity.py) -
 # a deliberately different set of "interesting" tags, since the question
 # being answered (what can I do) is different from Bus Explorer's (what's
