@@ -8,6 +8,9 @@ Run with:
 from flask import Flask, g, make_response, redirect, render_template, request, url_for
 
 from . import db, geocode, tfl_client
+from .car_explorer import PlaceNotFoundError as CarPlaceNotFoundError
+from .car_explorer import _search_key as _car_search_key
+from .car_explorer import find_by_car
 from .categorise import CATEGORIES
 from .categorise_activity import CATEGORIES as ACTIVITY_CATEGORIES
 from .pipeline import explore_route
@@ -271,6 +274,80 @@ def activity_results(search_key):
         search_key=search_key,
         results=results,
         categories=categories,
+    )
+
+
+@app.route("/car")
+def by_car():
+    return render_template("car_index.html", categories=CATEGORIES)
+
+
+@app.route("/car/search", methods=["POST"])
+def car_search():
+    place_name = request.form.get("place_name", "").strip()
+    radius_m = int(request.form.get("radius_m", 8047))
+    selected_categories = request.form.getlist("categories") or CATEGORIES
+    show_visited = "1" if request.form.get("show_visited") == "1" else "0"
+    show_ignored = "1" if request.form.get("show_ignored") == "1" else "0"
+
+    if not place_name:
+        return render_template(
+            "car_index.html", categories=CATEGORIES, error="Please enter a starting place."
+        )
+
+    search_key = _car_search_key(place_name)
+    cached_radius_m = db.max_explored_car_radius_m(search_key)
+
+    if cached_radius_m is not None and cached_radius_m >= radius_m:
+        # Already explored at this radius (or wider) - skip the slow
+        # OpenStreetMap pipeline and use what's cached.
+        return redirect(
+            url_for(
+                "car_results", search_key=search_key, radius=radius_m,
+                categories=selected_categories, show_visited=show_visited, show_ignored=show_ignored,
+            )
+        )
+
+    try:
+        result = find_by_car(place_name, radius_m)
+    except CarPlaceNotFoundError as e:
+        return render_template("car_index.html", categories=CATEGORIES, error=str(e))
+    except RuntimeError as e:
+        return render_template(
+            "car_index.html",
+            categories=CATEGORIES,
+            error=f"Could not fetch candidate places right now ({e}). Please try again shortly.",
+        )
+
+    return redirect(
+        url_for(
+            "car_results", search_key=result["search_key"], radius=radius_m,
+            categories=selected_categories, show_visited=show_visited, show_ignored=show_ignored,
+        )
+    )
+
+
+@app.route("/car/<search_key>")
+def car_results(search_key):
+    radius_m = request.args.get("radius", type=int)
+    categories = request.args.getlist("categories") or CATEGORIES
+    show_visited = request.args.get("show_visited", "1") == "1"
+    show_ignored = request.args.get("show_ignored", "0") == "1"
+
+    results = db.get_car_results(search_key, g.visitor_name, include_ignored=show_ignored)
+    if radius_m:
+        results = [r for r in results if r["distance_m"] <= radius_m]
+    results = [r for r in results if r["category"] in categories]
+    if not show_visited:
+        results = [r for r in results if not r["visited"]]
+
+    return render_template(
+        "car_results.html",
+        search_key=search_key,
+        results=results,
+        categories=categories,
+        show_visited="1" if show_visited else "0",
+        show_ignored="1" if show_ignored else "0",
     )
 
 

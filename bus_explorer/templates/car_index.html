@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Explore by car — Bus Explorer{% endblock %}
+{% block content %}
+<div class="card center-form">
+  <h1>Explore by car</h1>
+  <p class="hint">Enter a starting place to find places to explore within driving distance</p>
+
+  {% if error %}
+    <p class="error">{{ error }}</p>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('car_search') }}">
+    <label>
+      Starting from
+      <input type="text" name="place_name" placeholder="eg beckenham" required autofocus>
+    </label>
+
+    <label>
+      Maximum distance
+      <select name="radius_m">
+        <option value="3219">2 miles</option>
+        <option value="8047" selected>5 miles</option>
+        <option value="16093">10 miles</option>
+        <option value="32187">20 miles</option>
+      </select>
+    </label>
+
+    <fieldset class="category-filter">
+      <legend>Types of place to include</legend>
+      <div class="category-grid">
+        {% for cat in categories %}
+        <label class="category-option">
+          <input type="checkbox" name="categories" value="{{ cat }}" checked>
+          {{ cat }}
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+
+    <fieldset class="category-filter">
+      <legend>Display options</legend>
+      <label class="category-option">
+        <input type="checkbox" name="show_visited" value="1" checked>
+        Show already-visited places
+      </label>
+      <label class="category-option">
+        <input type="checkbox" name="show_ignored" value="1">
+        Show ignored places
+      </label>
+    </fieldset>
+
+    <button type="submit">Find places to explore</button>
+  </form>
+  <p class="hint">Fetching candidate places can take up to a minute the first time a place is explored.</p>
+</div>
+{% endblock %}

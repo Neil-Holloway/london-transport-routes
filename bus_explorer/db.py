@@ -81,6 +81,14 @@ def init_db():
                     PRIMARY KEY (search_key, attraction_id)
                 );
 
+                CREATE TABLE IF NOT EXISTS car_attractions (
+                    search_key TEXT NOT NULL,
+                    attraction_id TEXT NOT NULL REFERENCES attractions(id),
+                    distance_m DOUBLE PRECISION,
+                    max_radius_m INTEGER,
+                    PRIMARY KEY (search_key, attraction_id)
+                );
+
                 CREATE TABLE IF NOT EXISTS visits (
                     attraction_id TEXT NOT NULL REFERENCES attractions(id),
                     visitor_name TEXT NOT NULL,
@@ -366,6 +374,70 @@ def max_explored_journey_walk_m(search_key):
             if not row or row["to_m"] is None:
                 return None
             return row["to_m"], row["from_m"]
+
+
+def clear_car_attractions(search_key, conn=None):
+    """Same purpose as clear_route_attractions/clear_journey_attractions,
+    for Explore by car searches.
+    """
+    _run(conn, "DELETE FROM car_attractions WHERE search_key = %s", (search_key,))
+
+
+def bulk_upsert_car_attractions(rows, conn):
+    """Batched equivalent of a single-row car_attractions upsert - see
+    bulk_upsert_attractions for why this exists.
+    """
+    if not rows:
+        return
+    values = [
+        (r["search_key"], r["attraction_id"], r["distance_m"], r["max_radius_m"])
+        for r in rows
+    ]
+    with conn.cursor() as cur:
+        psycopg2.extras.execute_values(
+            cur,
+            """
+            INSERT INTO car_attractions (search_key, attraction_id, distance_m, max_radius_m)
+            VALUES %s
+            ON CONFLICT (search_key, attraction_id) DO UPDATE SET
+                distance_m=excluded.distance_m, max_radius_m=excluded.max_radius_m
+            """,
+            values,
+        )
+
+
+def get_car_results(search_key, visitor_name, include_ignored=False):
+    query = """
+        SELECT a.*, ca.distance_m,
+               COALESCE(v.visited, 0) AS visited, v.date_visited, v.note,
+               COALESCE(v.favourite, 0) AS favourite, COALESCE(v.ignored, 0) AS ignored
+        FROM car_attractions ca
+        JOIN attractions a ON a.id = ca.attraction_id
+        LEFT JOIN visits v ON v.attraction_id = a.id AND v.visitor_name = %s
+        WHERE ca.search_key = %s
+    """
+    if not include_ignored:
+        query += " AND COALESCE(v.ignored, 0) = 0"
+    query += " ORDER BY ca.distance_m ASC"
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(query, (visitor_name, search_key))
+            return [dict(r) for r in cur.fetchall()]
+
+
+def max_explored_car_radius_m(search_key):
+    """Largest radius_m this place has already been searched at, or None if
+    never searched - same caching purpose as max_explored_walk_m.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT MAX(max_radius_m) AS m FROM car_attractions WHERE search_key = %s",
+                (search_key,),
+            )
+            row = cur.fetchone()
+            return row["m"] if row and row["m"] is not None else None
 
 
 def get_route_results(line_id, visitor_name, include_ignored=False):

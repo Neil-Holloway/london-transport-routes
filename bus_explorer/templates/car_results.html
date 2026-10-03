@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Explore by car — Bus Explorer{% endblock %}
+{% block content %}
+<h1>Explore by car</h1>
+
+{% if not results %}
+  <p class="hint">No discoveries found within the selected distance. Try a larger radius from the home page.</p>
+{% endif %}
+
+{% if results %}
+<div class="result-list">
+  {% for r in results %}
+  <div class="card result">
+    <h2><a href="{{ url_for('attraction_detail', attraction_id=r.id) }}">{{ r.name }}</a></h2>
+    {% if r.address %}<div class="address">{{ r.address }}</div>{% endif %}
+    <div class="category">{{ r.category }}</div>
+    <div class="distance">{{ (r.distance_m / 1609.34) | round(1) }} miles from the start</div>
+    <p class="why">{{ r.why }}</p>
+    <div class="status">
+      {% if r.favourite %}★{% endif %}
+      {% if r.ignored %}<span class="ignored-tag">Ignored</span>{% endif %}
+      <form method="post" action="{{ url_for('toggle_visited', attraction_id=r.id) }}" class="inline-form">
+        <input type="hidden" name="return_to" value="{{ request.full_path }}">
+        {% if r.visited %}
+          <input type="hidden" name="visited" value="0">
+          <button type="submit">✓ Visited (undo)</button>
+        {% else %}
+          <input type="hidden" name="visited" value="1">
+          <button type="submit">Mark visited</button>
+        {% endif %}
+      </form>
+      <form method="post" action="{{ url_for('toggle_ignored', attraction_id=r.id) }}" class="inline-form">
+        <input type="hidden" name="return_to" value="{{ request.full_path }}">
+        {% if r.ignored %}
+          <input type="hidden" name="ignored" value="0">
+          <button type="submit">Un-ignore</button>
+        {% else %}
+          <input type="hidden" name="ignored" value="1">
+          <button type="submit">Ignore</button>
+        {% endif %}
+      </form>
+    </div>
+    <a class="more-info" href="{{ url_for('attraction_detail', attraction_id=r.id) }}">Show map and more information</a>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}
