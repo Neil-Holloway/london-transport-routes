@@ -3,6 +3,7 @@
 {% block content %}
 <div class="card center-form">
   <h1>What can I do today?</h1>
+  <p class="hint">Enter a base to find places in the categories below following bus, tram, tube and Overground routes</p>
 
   {% if error %}
     <p class="error">{{ error }}</p>
@@ -11,7 +12,7 @@
   <form method="post" action="{{ url_for('find_activities_route') }}">
     <label>
       Starting from
-      <input type="text" name="place_name" placeholder="Beckenham" required autofocus>
+      <input type="text" name="place_name" placeholder="eg beckenham" required autofocus>
     </label>
 
     <label>

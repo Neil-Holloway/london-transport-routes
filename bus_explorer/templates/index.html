@@ -3,6 +3,7 @@
 {% block content %}
 <div class="card center-form">
   <h1>Where shall I explore?</h1>
+  <p class="hint">Enter a bus route number in London to find places to explore</p>
 
   {% if error %}
     <p class="error">{{ error }}</p>
@@ -10,8 +11,8 @@
 
   <form method="post" action="{{ url_for('explore') }}">
     <label>
-      Bus, tube, DLR, Overground, Elizabeth line or tram route
-      <input type="text" name="route_number" placeholder="54 or Victoria" required autofocus>
+      Bus route
+      <input type="text" name="route_number" placeholder="eg 54" required autofocus>
     </label>
 
     <label>

@@ -58,17 +58,17 @@ def explore():
 
     if not route_number:
         return render_template(
-            "index.html", categories=CATEGORIES, error="Please enter a route."
+            "index.html", categories=CATEGORIES, error="Please enter a bus route number."
         )
 
     if area and "london" not in area.lower():
         return render_template(
             "index.html",
             categories=CATEGORIES,
-            error="Only London bus, tube, DLR, Overground, Elizabeth line and tram routes are supported in this version.",
+            error="Only London bus routes are supported in this version.",
         )
 
-    line_id = tfl_client.resolve_line_id(route_number)
+    line_id = route_number.strip().lower()
     cached_walk_m = db.max_explored_walk_m(line_id)
 
     if cached_walk_m is not None and cached_walk_m >= max_walk_m:

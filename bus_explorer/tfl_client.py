@@ -351,39 +351,23 @@ def line_display_label(line_id):
     return info["name"]  # Overground lines and Elizabeth line are already full names
 
 
-def resolve_line_id(route_number):
-    """Resolve user-typed input to a TfL line id, without fetching the
-    route's stop sequence - just the alias lookup (see
-    _non_bus_line_aliases). Used wherever a line id is needed before
-    deciding whether to call resolve_route at all (e.g. explore()'s
-    already-explored-at-this-radius cache check in app.py) - that check
-    must use the same line id resolve_route would end up using, or a
-    route typed as an alias (e.g. "Victoria line") would never match its
-    own cached results (stored under "victoria").
-    """
-    typed = route_number.strip().lower()
-    return _non_bus_line_aliases().get(typed, typed)
-
-
 def resolve_route(route_number):
-    """Resolve a user-entered route number/name to branches with
-    coordinates. Covers bus route numbers (which are already their own
-    line id) and tube/DLR/Overground/Elizabeth line/tram, resolved via
-    _non_bus_line_aliases - e.g. "358", "victoria", "Victoria line" and
-    "DLR" all work.
+    """Resolve a user-entered bus route number to branches with
+    coordinates. Explore is bus-only - tube/DLR/Overground/Elizabeth
+    line/tram are supported in What Can I Do, not here (see
+    line_display_label/_non_bus_line_aliases, which remain for that and
+    for labelling What Can I Do's results).
 
     Returns a dict: {
         "line_id": ...,
         "branches": [ { direction, branchId, stops: [{id, name, lat, lon}] } ],
     }
-    Raises RouteNotFoundError if the route doesn't exist on any covered mode.
+    Raises RouteNotFoundError if the route doesn't exist.
     """
-    line_id = resolve_line_id(route_number)
+    line_id = route_number.strip().lower()
     cached_branches = get_route_branches(line_id)
     if not cached_branches:
-        raise RouteNotFoundError(
-            f"No London bus, tube, DLR, Overground, Elizabeth line or tram route found matching '{route_number}'."
-        )
+        raise RouteNotFoundError(f"No London bus route found matching '{route_number}'.")
 
     _fill_missing_coordinates(cached_branches)
 
