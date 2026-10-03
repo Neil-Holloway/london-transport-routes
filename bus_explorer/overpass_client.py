@@ -46,6 +46,8 @@ import urllib.parse
 import urllib.request
 import uuid
 
+from . import area
+
 MIRRORS = [
     "https://overpass.openstreetmap.fr/api/interpreter",
 ]
@@ -82,6 +84,7 @@ ACTIVITY_QUERY_CLAUSES = [
     '["leisure"~"^(sports_centre|fitness_centre)$"]',
     '["landuse"="allotments"]',
     '["landuse"="recreation_ground"]',
+    '["leisure"~"^(park|garden|nature_reserve)$"]',
 ]
 
 
@@ -129,7 +132,7 @@ def _build_multi_bbox_query(bboxes, clauses, timeout_s=50):
     return f"[out:json][timeout:{timeout_s}];\n// nonce:{uuid.uuid4()}\n({body}\n);\nout center tags;"
 
 
-def _execute(query, rounds=1, timeout=25):
+def _execute(query, rounds=1, timeout=25, normalise=True):
     """POST query to each mirror in turn, trying every mirror before
     retrying any of them again - a mirror that's briefly overloaded gets a
     second chance only after the others have already been tried, rather
@@ -138,6 +141,11 @@ def _execute(query, rounds=1, timeout=25):
     takes to compute server-side (see find_candidates_multi_bbox for why
     that varies a lot by query size) - too short and a mirror that would
     have answered correctly just gets abandoned mid-computation.
+
+    normalise=False skips _normalise_elements (which discards geometry and
+    drops anything without a "name" tag) - used by fetch_areas, which needs
+    the raw "geometry"/"members" fields of an 'out geom' query, not a
+    single lat/lon per element.
     """
     body = urllib.parse.urlencode({"data": query}).encode()
 
@@ -159,7 +167,8 @@ def _execute(query, rounds=1, timeout=25):
                     # if every attempt hits this, an honest error) rather
                     # than silently telling the user there's nothing nearby.
                     raise TimeoutError(data["remark"])
-                return _normalise_elements(data.get("elements", []))
+                elements = data.get("elements", [])
+                return _normalise_elements(elements) if normalise else elements
             except (OSError, ValueError) as e:
                 # OSError covers HTTPError/URLError plus socket.timeout and
                 # the TimeoutError raised above for a server-side query
@@ -227,6 +236,39 @@ def find_candidates_multi_bbox(bboxes, retries_per_mirror=1, clauses=None, timeo
         seen.add(key)
         deduped.append(el)
     return deduped
+
+
+def fetch_areas(refs, timeout_s=30):
+    """Fetch full geometry for the given (osm_type, osm_id) way/relation
+    references and compute each one's area in m^2 (see area.py). Used to
+    size-filter park/garden/nature_reserve candidates (see area_filter.py);
+    kept as a separate, targeted query rather than switching the main
+    candidate query to 'out geom' for everything, since full geometry is
+    only needed for this handful of park-tagged survivors, not every
+    candidate the app finds.
+
+    refs with osm_type "node" are ignored - a node has no boundary to
+    measure. Returns {(osm_type, osm_id): area_m2}; a ref that can't be
+    resolved (e.g. deleted since the original search) is simply omitted.
+    """
+    parts = []
+    for osm_type, osm_id in refs:
+        if osm_type == "way":
+            parts.append(f"way({osm_id});")
+        elif osm_type == "relation":
+            parts.append(f"rel({osm_id});")
+    if not parts:
+        return {}
+
+    body = "\n".join(parts)
+    # See _build_query for why the nonce comment is here.
+    query = f"[out:json][timeout:{timeout_s}];\n// nonce:{uuid.uuid4()}\n({body}\n);\nout geom;"
+    elements = _execute(query, rounds=1, timeout=timeout_s + 15, normalise=False)
+
+    areas = {}
+    for el in elements:
+        areas[(el["type"], el["id"])] = area.element_area_m2(el)
+    return areas
 
 
 def _normalise_elements(elements):

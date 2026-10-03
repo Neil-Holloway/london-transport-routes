@@ -16,6 +16,7 @@ CATEGORIES = [
     "Allotments and community gardens",
     "Markets",
     "Recreation grounds",
+    "Parks and green space",
 ]
 
 
@@ -32,6 +33,9 @@ DESCRIPTIONS = {
     "Allotments and community gardens": "Allotments or community garden.",
     "Markets": "Market.",
     "Recreation grounds": "Recreation ground.",
+    # Only parks/gardens/nature reserves over 10 hectares survive the
+    # area_filter.filter_by_area step in whatcanido.py - see that module.
+    "Parks and green space": "Park, garden or nature reserve (over 10 hectares).",
 }
 
 
@@ -59,4 +63,6 @@ def categorise_activity(tags):
         return "Allotments and community gardens"
     if landuse == "recreation_ground":
         return "Recreation grounds"
+    if leisure in ("park", "garden", "nature_reserve"):
+        return "Parks and green space"
     return None

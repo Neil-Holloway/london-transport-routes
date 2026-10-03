@@ -18,7 +18,7 @@ and described differently. See the What Can I Do spec, sections 2 and 9.
 import math
 import re
 
-from . import categorise_activity, db, geocode, overpass_client, scoring, tfl_client
+from . import area_filter, categorise_activity, db, geocode, overpass_client, scoring, tfl_client
 
 WALK_SPEED_M_PER_MIN = 80  # matches pipeline.py's walking pace assumption
 
@@ -125,7 +125,13 @@ def find_activities(place_name, max_walk_to_stop_m, max_walk_from_stop_m, select
             }
         )
 
-    deduped = scoring.dedupe(candidates)
+    # Parks/gardens/nature reserves are only worth a special trip if they're
+    # a decent size - filter those down to >10ha here, after the normal
+    # candidate pass, rather than fetching full geometry for every
+    # candidate up front. See area_filter.py.
+    sized_candidates = area_filter.filter_by_area(candidates)
+
+    deduped = scoring.dedupe(sized_candidates)
     deduped.sort(key=lambda c: c["distance_m"])
 
     search_key = _search_key(place_name)

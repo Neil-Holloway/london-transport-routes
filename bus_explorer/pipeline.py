@@ -9,7 +9,7 @@
 6. Persist attractions + their per-route placement in SQLite (db).
 """
 
-from . import categorise, db, enrich, geocode, overpass_client, scoring, tfl_client
+from . import area_filter, categorise, db, enrich, geocode, overpass_client, scoring, tfl_client
 
 WALK_SPEED_M_PER_MIN = 80  # ~4.8 km/h, a relaxed walking pace
 
@@ -78,7 +78,13 @@ def explore_route(route_number, max_walk_m):
             }
         )
 
-    deduped = scoring.dedupe(enriched_candidates)
+    # Parks/gardens/nature reserves are only worth a special trip if they're
+    # a decent size - filter those down to >10ha here, after the normal
+    # candidate/score pass, rather than fetching full geometry for every
+    # candidate up front. See area_filter.py.
+    sized_candidates = area_filter.filter_by_area(enriched_candidates)
+
+    deduped = scoring.dedupe(sized_candidates)
     deduped.sort(key=lambda c: c["nearest_stop_index"])
 
     results = []
