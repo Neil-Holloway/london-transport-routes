@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Explore by train — Bus Explorer{% endblock %}
+{% block content %}
+<div class="card center-form">
+  <h1>Explore by train</h1>
+  <p class="hint">Enter a starting place to find places to explore a short train ride away</p>
+
+  {% if error %}
+    <p class="error">{{ error }}</p>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('train_search') }}">
+    <label>
+      Starting from
+      <input type="text" name="place_name" placeholder="eg beckenham" required autofocus>
+    </label>
+
+    <label>
+      Maximum walk to the station
+      <select name="max_walk_to_station_m">
+        <option value="1000">1 km</option>
+        <option value="1500" selected>1.5 km</option>
+        <option value="2000">2 km</option>
+      </select>
+    </label>
+
+    <label>
+      Maximum stops onward
+      <select name="max_stops">
+        <option value="3">3 stops</option>
+        <option value="5" selected>5 stops</option>
+        <option value="10">10 stops</option>
+      </select>
+    </label>
+
+    <fieldset class="category-filter">
+      <legend>Types of place to include</legend>
+      <div class="category-grid">
+        {% for cat in categories %}
+        <label class="category-option">
+          <input type="checkbox" name="categories" value="{{ cat }}" checked>
+          {{ cat }}
+        </label>
+        {% endfor %}
+      </div>
+    </fieldset>
+
+    <fieldset class="category-filter">
+      <legend>Display options</legend>
+      <label class="category-option">
+        <input type="checkbox" name="show_visited" value="1" checked>
+        Show already-visited places
+      </label>
+      <label class="category-option">
+        <input type="checkbox" name="show_ignored" value="1">
+        Show ignored places
+      </label>
+    </fieldset>
+
+    <button type="submit">Find places to explore</button>
+  </form>
+  <p class="hint">Fetching candidate places can take up to a minute the first time a place is explored.</p>
+</div>
+{% endblock %}

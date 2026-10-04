@@ -89,6 +89,19 @@ def init_db():
                     PRIMARY KEY (search_key, attraction_id)
                 );
 
+                CREATE TABLE IF NOT EXISTS train_attractions (
+                    search_key TEXT NOT NULL,
+                    attraction_id TEXT NOT NULL REFERENCES attractions(id),
+                    line_id TEXT,
+                    direction TEXT,
+                    destination_stop_name TEXT,
+                    distance_m DOUBLE PRECISION,
+                    walk_minutes DOUBLE PRECISION,
+                    max_walk_to_station_m INTEGER,
+                    max_stops INTEGER,
+                    PRIMARY KEY (search_key, attraction_id)
+                );
+
                 CREATE TABLE IF NOT EXISTS visits (
                     attraction_id TEXT NOT NULL REFERENCES attractions(id),
                     visitor_name TEXT NOT NULL,
@@ -374,6 +387,87 @@ def max_explored_journey_walk_m(search_key):
             if not row or row["to_m"] is None:
                 return None
             return row["to_m"], row["from_m"]
+
+
+def clear_train_attractions(search_key, conn=None):
+    """Same purpose as clear_journey_attractions/clear_car_attractions, for
+    Explore by train searches.
+    """
+    _run(conn, "DELETE FROM train_attractions WHERE search_key = %s", (search_key,))
+
+
+def bulk_upsert_train_attractions(rows, conn):
+    """Batched equivalent of a single-row train_attractions upsert - see
+    bulk_upsert_attractions for why this exists.
+    """
+    if not rows:
+        return
+    values = [
+        (
+            r["search_key"], r["attraction_id"], r["line_id"], r["direction"],
+            r["destination_stop_name"], r["distance_m"], r["walk_minutes"],
+            r["max_walk_to_station_m"], r["max_stops"],
+        )
+        for r in rows
+    ]
+    with conn.cursor() as cur:
+        psycopg2.extras.execute_values(
+            cur,
+            """
+            INSERT INTO train_attractions
+                (search_key, attraction_id, line_id, direction, destination_stop_name,
+                 distance_m, walk_minutes, max_walk_to_station_m, max_stops)
+            VALUES %s
+            ON CONFLICT (search_key, attraction_id) DO UPDATE SET
+                line_id=excluded.line_id, direction=excluded.direction,
+                destination_stop_name=excluded.destination_stop_name,
+                distance_m=excluded.distance_m, walk_minutes=excluded.walk_minutes,
+                max_walk_to_station_m=excluded.max_walk_to_station_m,
+                max_stops=excluded.max_stops
+            """,
+            values,
+        )
+
+
+def get_train_results(search_key, visitor_name, include_ignored=False):
+    query = """
+        SELECT a.*, ta.line_id, ta.direction, ta.destination_stop_name,
+               ta.distance_m, ta.walk_minutes,
+               COALESCE(v.visited, 0) AS visited, v.date_visited, v.note,
+               COALESCE(v.favourite, 0) AS favourite, COALESCE(v.ignored, 0) AS ignored
+        FROM train_attractions ta
+        JOIN attractions a ON a.id = ta.attraction_id
+        LEFT JOIN visits v ON v.attraction_id = a.id AND v.visitor_name = %s
+        WHERE ta.search_key = %s
+    """
+    if not include_ignored:
+        query += " AND COALESCE(v.ignored, 0) = 0"
+    query += " ORDER BY ta.distance_m ASC"
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(query, (visitor_name, search_key))
+            return [dict(r) for r in cur.fetchall()]
+
+
+def max_explored_train_stops(search_key):
+    """Largest (max_walk_to_station_m, max_stops) this search has already
+    been run at, or None if never explored - same caching purpose as
+    max_explored_car_radius_m.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT MAX(max_walk_to_station_m) AS walk_m, MAX(max_stops) AS stops
+                FROM train_attractions WHERE search_key = %s
+                """,
+                (search_key,),
+            )
+            row = cur.fetchone()
+            if not row or row["walk_m"] is None:
+                return None
+            return row["walk_m"], row["stops"]
 
 
 def clear_car_attractions(search_key, conn=None):

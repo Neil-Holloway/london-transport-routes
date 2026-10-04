@@ -213,6 +213,74 @@ def find_nearby_stops(lat, lon, radius_m):
     return stops
 
 
+_TRAIN_MODE_LINE_IDS_CACHE = None
+
+
+def _train_mode_line_ids():
+    """Line ids for National Rail + Overground + Elizabeth line. TfL's
+    StopPoint search returns every line sharing a station's stop area
+    regardless of the modes= filter passed (the same quirk _rail_mode_line_ids
+    works around for find_nearby_stops) - a rail station's "lines" list
+    routinely also includes the bus routes serving the same stop group (e.g.
+    Beckenham Junction lists bus routes 54/162/354 alongside southeastern/
+    southern/thameslink). Used by find_nearby_rail_stations to filter each
+    station's line list down to just rail services.
+
+    Fetched once and cached for the lifetime of the process, same pattern
+    as _rail_mode_line_ids.
+    """
+    global _TRAIN_MODE_LINE_IDS_CACHE
+    if _TRAIN_MODE_LINE_IDS_CACHE is None:
+        data = _fetch_json("/Line/Mode/national-rail,overground,elizabeth-line") or []
+        _TRAIN_MODE_LINE_IDS_CACHE = {line["id"] for line in data}
+    return _TRAIN_MODE_LINE_IDS_CACHE
+
+
+def find_nearby_rail_stations(lat, lon, radius_m):
+    """Find National Rail/Overground/Elizabeth line stations within
+    radius_m of (lat, lon), each with every rail line serving it.
+
+    Unlike find_nearby_stops (which deliberately excludes national rail -
+    see _rail_mode_line_ids), this is the entry point for Explore by train,
+    where national rail operators are exactly what's wanted. Geocoding the
+    typed place name first and then searching by radius (same pattern as
+    find_nearby_stops) means a town name like "Beckenham" surfaces its
+    station ("Beckenham Junction") without the user needing to know its
+    exact name - same precedent as tram stops today.
+
+    Returns a list of {id, name, lat, lon, lines: [line_id, ...]}.
+    """
+    path = (
+        f"/StopPoint?lat={lat}&lon={lon}&radius={radius_m}"
+        "&stopTypes=NaptanRailStation"
+        "&modes=national-rail,overground,elizabeth-line"
+    )
+    data = _fetch_json(path)
+    if not data:
+        return []
+
+    train_mode_ids = _train_mode_line_ids()
+
+    stations = []
+    for sp in data.get("stopPoints", []):
+        lines = [
+            line.get("id") for line in sp.get("lines", [])
+            if line.get("id") in train_mode_ids
+        ]
+        if not lines:
+            continue
+        stations.append(
+            {
+                "id": sp.get("naptanId") or sp.get("id"),
+                "name": sp.get("commonName"),
+                "lat": sp.get("lat"),
+                "lon": sp.get("lon"),
+                "lines": lines,
+            }
+        )
+    return stations
+
+
 def _fill_missing_coordinates(branches):
     """Route/Sequence/all already includes lat/lon per stop (see
     get_route_branches), so this should normally be a no-op. It exists only
@@ -244,11 +312,20 @@ def _fill_missing_coordinates(branches):
                     stop["lat"], stop["lon"] = c[0], c[1]
 
 
-def journeys_from_stop(line_id, boarding_stop_id):
+def journeys_from_stop(line_id, boarding_stop_id, max_stops=None):
     """For a bus route serving a given boarding stop, return the outward
     stop sequence in both directions starting from (and including) that
     stop - i.e. every stop reachable by one bus journey without changing
     buses, in either direction you could board in.
+
+    max_stops, if given, caps how many onward stops are returned (the
+    boarding stop plus up to max_stops further ones). Needed for national
+    rail (see Explore by train): unlike a bus/tube/tram branch, a mainline
+    rail branch's real terminus can be dozens of stops and many miles away
+    (e.g. Southeastern branches through Beckenham Junction reaching as far
+    as Ramsgate), which is further than a "quick trip from this station" to
+    explore is meant to cover. Left as None (no cap) for every existing
+    caller - bus/tube/tram branches are already short enough not to need it.
 
     Returns a list of 0, 1 or 2 dicts: {direction, stops: [{id, name, lat, lon}, ...]}.
     Branches that don't actually serve the boarding stop are skipped (a route
@@ -269,6 +346,8 @@ def journeys_from_stop(line_id, boarding_stop_id):
             continue
         idx = ids.index(boarding_stop_id)
         onward = stops[idx:]
+        if max_stops is not None:
+            onward = onward[: max_stops + 1]
         if len(onward) < 2:
             continue  # boarding stop is the end of this branch - nowhere to ride onward to
         journeys.append({"direction": branch["direction"], "stops": onward})
@@ -333,12 +412,35 @@ def _non_bus_line_info():
     return _NON_BUS_LINE_INFO_CACHE
 
 
+_RAIL_LINE_INFO_CACHE = None
+
+
+def _rail_line_info():
+    """Map of TfL line id -> operator name, for national rail (e.g.
+    'southeastern' -> 'Southeastern'). Used by line_display_label for
+    Explore by train results - without this, an operator id would fall
+    through to line_display_label's bus-route guess (e.g. "Bus SOUTHEASTERN").
+
+    Fetched once and cached for the lifetime of the process, same pattern
+    as _non_bus_line_info.
+    """
+    global _RAIL_LINE_INFO_CACHE
+    if _RAIL_LINE_INFO_CACHE is None:
+        data = _fetch_json("/Line/Mode/national-rail") or []
+        _RAIL_LINE_INFO_CACHE = {line["id"]: line["name"] for line in data}
+    return _RAIL_LINE_INFO_CACHE
+
+
 def line_display_label(line_id):
     """Human-readable label for a line id, used wherever a result needs to
     say which service to catch (e.g. "Bus 358", "Victoria line", "DLR",
-    "Tram", "Mildmay"). Any id not recognised as tube/DLR/Overground/
-    Elizabeth line/tram is assumed to be a bus route number.
+    "Tram", "Mildmay", "Southeastern"). Any id not recognised as tube/DLR/
+    Overground/Elizabeth line/tram/national rail is assumed to be a bus
+    route number.
     """
+    rail_name = _rail_line_info().get(line_id)
+    if rail_name is not None:
+        return rail_name
     info = _non_bus_line_info().get(line_id)
     if info is None:
         return f"Bus {line_id.upper()}"

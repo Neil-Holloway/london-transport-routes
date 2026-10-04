@@ -16,6 +16,9 @@ from .categorise import CATEGORIES
 from .categorise_activity import CATEGORIES as ACTIVITY_CATEGORIES
 from .pipeline import explore_route
 from .tfl_client import RouteNotFoundError
+from .train_explorer import PlaceNotFoundError as TrainPlaceNotFoundError
+from .train_explorer import _search_key as _train_search_key
+from .train_explorer import find_by_train
 from .walkplan import build_plan
 from .whatcanido import PlaceNotFoundError, _search_key, find_activities
 
@@ -347,6 +350,83 @@ def car_results(search_key):
 
     return render_template(
         "car_results.html",
+        search_key=search_key,
+        results=results,
+        categories=categories,
+        show_visited="1" if show_visited else "0",
+        show_ignored="1" if show_ignored else "0",
+    )
+
+
+@app.route("/train")
+def by_train():
+    return render_template("train_index.html", categories=CATEGORIES)
+
+
+@app.route("/train/search", methods=["POST"])
+def train_search():
+    place_name = request.form.get("place_name", "").strip()
+    max_walk_to_station_m = int(request.form.get("max_walk_to_station_m", 1500))
+    max_stops = int(request.form.get("max_stops", 5))
+    selected_categories = request.form.getlist("categories") or CATEGORIES
+    show_visited = "1" if request.form.get("show_visited") == "1" else "0"
+    show_ignored = "1" if request.form.get("show_ignored") == "1" else "0"
+
+    if not place_name:
+        return render_template(
+            "train_index.html", categories=CATEGORIES, error="Please enter a starting place."
+        )
+
+    search_key = _train_search_key(place_name)
+    cached = db.max_explored_train_stops(search_key)
+
+    if cached and cached[0] >= max_walk_to_station_m and cached[1] >= max_stops:
+        # Already explored at this walk distance/stop count (or wider) -
+        # skip the slow TfL + OpenStreetMap pipeline and use what's cached.
+        return redirect(
+            url_for(
+                "train_results", search_key=search_key, walk=max_walk_to_station_m, max_stops=max_stops,
+                categories=selected_categories, show_visited=show_visited, show_ignored=show_ignored,
+            )
+        )
+
+    try:
+        result = find_by_train(place_name, max_walk_to_station_m, max_stops)
+    except TrainPlaceNotFoundError as e:
+        return render_template("train_index.html", categories=CATEGORIES, error=str(e))
+    except RuntimeError as e:
+        return render_template(
+            "train_index.html",
+            categories=CATEGORIES,
+            error=f"Could not fetch candidate places right now ({e}). Please try again shortly.",
+        )
+
+    return redirect(
+        url_for(
+            "train_results", search_key=result["search_key"], walk=max_walk_to_station_m, max_stops=max_stops,
+            categories=selected_categories, show_visited=show_visited, show_ignored=show_ignored,
+        )
+    )
+
+
+@app.route("/train/<search_key>")
+def train_results(search_key):
+    walk_m = request.args.get("walk", type=int)
+    categories = request.args.getlist("categories") or CATEGORIES
+    show_visited = request.args.get("show_visited", "1") == "1"
+    show_ignored = request.args.get("show_ignored", "0") == "1"
+
+    results = db.get_train_results(search_key, g.visitor_name, include_ignored=show_ignored)
+    if walk_m:
+        results = [r for r in results if r["distance_m"] <= walk_m]
+    results = [r for r in results if r["category"] in categories]
+    if not show_visited:
+        results = [r for r in results if not r["visited"]]
+    for r in results:
+        r["line_label"] = tfl_client.line_display_label(r["line_id"])
+
+    return render_template(
+        "train_results.html",
         search_key=search_key,
         results=results,
         categories=categories,
