@@ -3,14 +3,16 @@ walking route, not the nearest-neighbour point-ordering walkplan.py already
 does for a list of attractions (see park_walks.py's module docstring for why
 a real routing engine was chosen over a dependency-free approximation).
 
-Two modes are used, both via ORS's foot-walking directions endpoint:
-  - round_trip_route: a loop of approximately length_m starting and ending
-    at the same point - used for "walk around this one park", via ORS's
-    options.round_trip (a single start point plus a target length is enough;
-    ORS does the route-finding).
-  - directions_route: an explicit ordered list of waypoints - used for
-    "walk from park A to park B", where the join between two parks is a
-    real point-to-point route, not a loop.
+directions_route - an explicit ordered list of waypoints, via ORS's
+foot-walking directions endpoint - is the only mode used. An earlier version
+also had a round_trip_route (a loop of approximately a given length from a
+single start point, via ORS's options.round_trip) for "walk around this one
+park", but that was dropped: ORS's routing graph has no notion that the
+start point is a park, only a coordinate, and round_trip-generated loops
+measured as just skirting the park on the surrounding streets rather than
+actually walking through it. park_walks.py now builds its own explicit
+waypoints that force the route through a park's interior instead (see
+park_walks._park_loop_waypoints).
 
 Requires ORS_API_KEY (a free account at openrouteservice.org gives 2000
 requests/day, 40/minute - ample for this app's traffic). Every request
@@ -68,9 +70,7 @@ def _post(payload, timeout=25):
     # ORS breaks a route into one or more "segments" (one per leg between
     # consecutive waypoints), each with its own turn-by-turn "steps" - flatten
     # every segment's steps into a single ordered list, since park_walks.py
-    # only ever passes this to the caller as one continuous leg of a walk
-    # (round_trip_route has one segment; directions_route's 2-waypoint calls
-    # here do too, but this doesn't assume that).
+    # only ever passes this to the caller as one continuous leg of a walk.
     instructions = []
     for segment in properties.get("segments") or []:
         for step in segment.get("steps") or []:
@@ -88,28 +88,6 @@ def _post(payload, timeout=25):
         "duration_s": summary.get("duration"),
         "instructions": instructions,
     }
-
-
-def round_trip_route(lat, lon, length_m, seed=None, points=None):
-    """A loop of approximately length_m starting and ending at (lat, lon).
-
-    points controls how many route "shape points" ORS considers when
-    building the loop (more points = smoother but slower to compute);
-    left to ORS's own default (seemingly a handful) if not given. seed
-    lets a specific loop be reproduced (e.g. re-rendering a cached result)
-    rather than generating a different random loop of the same length
-    each time.
-    """
-    round_trip = {"length": length_m}
-    if points is not None:
-        round_trip["points"] = points
-    if seed is not None:
-        round_trip["seed"] = seed
-    payload = {
-        "coordinates": [[lon, lat]],
-        "options": {"round_trip": round_trip},
-    }
-    return _post(payload)
 
 
 def directions_route(waypoints):

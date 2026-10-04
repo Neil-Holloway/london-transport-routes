@@ -132,6 +132,29 @@ def element_ring(el):
     return []
 
 
+def nearest_ring_index(ring, lat, lon):
+    """Index into ring of its nearest vertex to (lat, lon) - same matching
+    logic as nearest_point_on_ring, but returning the vertex's position
+    within the ring rather than the point itself, so a walk around the ring
+    can continue on from here (see park_walks._park_loop_waypoints).
+    Returns None for an empty ring.
+    """
+    if not ring:
+        return None
+    lat_scale = 111_320
+    lon_scale = 111_320 * max(math.cos(math.radians(lat)), 0.01)
+    best_index = None
+    best_dist2 = None
+    for i, point in enumerate(ring):
+        dy = (point[0] - lat) * lat_scale
+        dx = (point[1] - lon) * lon_scale
+        dist2 = dx * dx + dy * dy
+        if best_dist2 is None or dist2 < best_dist2:
+            best_dist2 = dist2
+            best_index = i
+    return best_index
+
+
 def nearest_point_on_ring(ring, lat, lon):
     """Nearest ring vertex to (lat, lon) - a proxy for "nearest park
     entrance", since real OSM entrance/gate data isn't being fetched here.
@@ -139,20 +162,8 @@ def nearest_point_on_ring(ring, lat, lon):
     existing vertex), consistent with this module's flat-earth approach
     elsewhere. Returns None for an empty ring.
     """
-    if not ring:
-        return None
-    lat_scale = 111_320
-    lon_scale = 111_320 * max(math.cos(math.radians(lat)), 0.01)
-    best_point = None
-    best_dist2 = None
-    for point in ring:
-        dy = (point[0] - lat) * lat_scale
-        dx = (point[1] - lon) * lon_scale
-        dist2 = dx * dx + dy * dy
-        if best_dist2 is None or dist2 < best_dist2:
-            best_dist2 = dist2
-            best_point = point
-    return best_point
+    index = nearest_ring_index(ring, lat, lon)
+    return ring[index] if index is not None else None
 
 
 def element_area_m2(el):

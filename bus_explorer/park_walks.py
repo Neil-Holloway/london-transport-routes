@@ -48,10 +48,15 @@ DEFAULT_MAX_WALK_TO_PARK_M = 2000
 # which is exactly what joining to a second park is for).
 SLACK_FACTOR = 1.5
 
-# Below this, a per-park loop isn't worth generating as its own leg (ORS's
-# round_trip needs a meaningfully positive length anyway) - see
+# Below this, a per-park loop isn't worth generating as its own leg - see
 # _build_joined_route.
 MIN_LOOP_M = 300
+
+# How many ring-vertex "spokes" out to the park's centroid and back a loop
+# uses - see _park_loop_waypoints. Capped so a large target distance against
+# a small park doesn't build an unreasonably long waypoint list for one ORS
+# call.
+MAX_LOOP_SPOKES = 6
 
 TARGET_DISTANCES_M = [5000, 10000, 15000]
 
@@ -124,18 +129,60 @@ def _is_single_park_feasible(park, target_distance_m):
     return park["perimeter_m"] * SLACK_FACTOR >= target_distance_m
 
 
+def _park_loop_waypoints(park, target_length_m):
+    """Builds an explicit waypoint sequence for a loop that starts and ends
+    at the park's entrance and repeatedly dips into its centroid.
+
+    A bare ORS round_trip from the entrance alone was tried first and
+    measured to just skirt the park on the surrounding streets rather than
+    actually walking through it - ORS's routing graph has no notion that
+    the start point is a park, only a coordinate, and if the park's own
+    path network is thinner than the streets around it (true for many
+    smaller London parks in OSM), the street grid wins on cost every time.
+    Forcing the route through the centroid - a point ORS can only reach via
+    paths genuinely inside the park - fixes that, and doing it in multiple
+    spokes rather than once lets the loop's length scale with
+    target_length_m (more, evenly-spaced spokes for a longer target) instead
+    of being a fixed shape regardless of what's being asked for.
+    """
+    entrance = park["entrance"]
+    centroid = park["centroid"]
+    ring = park["ring"]
+
+    radius_m = scoring.haversine_m(entrance[0], entrance[1], centroid[0], centroid[1])
+    if radius_m < 1:
+        return [entrance, centroid, entrance]
+
+    spokes = max(1, min(MAX_LOOP_SPOKES, round(target_length_m / (2 * radius_m))))
+
+    entrance_index = area.nearest_ring_index(ring, entrance[0], entrance[1])
+    step = max(1, len(ring) // (spokes + 1))
+
+    waypoints = [entrance]
+    for n in range(1, spokes + 1):
+        waypoints.append(centroid)
+        waypoints.append(ring[(entrance_index + n * step) % len(ring)])
+    waypoints.append(centroid)
+    waypoints.append(entrance)
+    return waypoints
+
+
+def _park_loop_route(park, target_length_m):
+    return routing_client.directions_route(_park_loop_waypoints(park, target_length_m))
+
+
 def _build_joined_route(park1, park2, target_distance_m):
     """Compose a joined two-park route out of three real ORS calls, rather
-    than one explicit-waypoint directions_route through both parks - that
-    was tried first and measured to just take whatever the shortest real
-    path between the waypoints happened to be (e.g. ~2.6-3.9km against a
-    requested 5/10/15km, identical regardless of target_distance_m), since
-    ORS's directions mode has no concept of a target length at all. Here,
-    only the leg between the two parks (a fixed, real distance - can't be
-    stretched) uses directions_route; the two loops inside each park use
-    round_trip, which does aim for a given length, sized so leg + loop1 +
-    loop2 + leg (walking the join both ways) adds up to roughly
-    target_distance_m.
+    than one explicit-waypoint directions_route straight through both parks
+    - that was tried first and measured to just take whatever the shortest
+    real path between the waypoints happened to be (e.g. ~2.6-3.9km against
+    a requested 5/10/15km, identical regardless of target_distance_m), since
+    plain directions has no concept of a target length at all. Here, only
+    the leg between the two parks (a fixed, real distance - can't be
+    stretched) is a single directions_route call; the two loops inside each
+    park are each their own centroid-forcing waypoint route (see
+    _park_loop_route), sized so leg + loop1 + loop2 + leg (walking the join
+    both ways) adds up to roughly target_distance_m.
 
     Returns None if the parks are too far apart to leave a meaningful
     length for either park's loop - the caller falls back to a single-park
@@ -152,8 +199,8 @@ def _build_joined_route(park1, park2, target_distance_m):
     l1 = max(MIN_LOOP_M, remaining * park1["perimeter_m"] / total_perim)
     l2 = max(MIN_LOOP_M, remaining - l1)
 
-    loop1 = routing_client.round_trip_route(park1["entrance"][0], park1["entrance"][1], l1)
-    loop2 = routing_client.round_trip_route(park2["entrance"][0], park2["entrance"][1], l2)
+    loop1 = _park_loop_route(park1, l1)
+    loop2 = _park_loop_route(park2, l2)
 
     coordinates = (
         loop1["coordinates"]
@@ -240,9 +287,7 @@ def find_park_walk(place_name, target_distance_m, max_walk_to_park_m=DEFAULT_MAX
         # meaningful length for either park's loop (see
         # _build_joined_route) - a single-park loop at the full requested
         # distance is the best remaining option.
-        route = routing_client.round_trip_route(
-            park1["entrance"][0], park1["entrance"][1], target_distance_m
-        )
+        route = _park_loop_route(park1, target_distance_m)
 
     # _build_joined_route already returns its own multi-leg "sections";
     # a single-park loop is just the one leg.
