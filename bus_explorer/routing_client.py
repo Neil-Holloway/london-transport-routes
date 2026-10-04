@@ -7,10 +7,14 @@ round_trip_route generates a loop of approximately length_m starting and
 ending at the same point, via ORS's foot-walking directions endpoint's
 options.round_trip (a single start point plus a target length is enough;
 ORS does the route-finding). park_walks.py starts this from a park's
-centroid rather than its boundary - see _park_loop_route there for why:
-starting right at the edge let ORS's optimiser satisfy the requested length
-entirely from the surrounding streets, without ever dipping into the park
-at all.
+centroid rather than its boundary, and also passes avoid_polygon - see
+_park_loop_route/_avoid_polygon_outside_park there for why both are needed:
+round_trip's own length-targeting has no concept of staying inside an area
+at all, so a centroid start only guarantees the first and last stretch use
+an in-park path - the rest of the loop is free to wander onto surrounding
+streets to make up the requested distance. avoid_polygon makes that a hard
+constraint instead of a nudge, by marking everything outside the park as
+off-limits to the router.
 
 Requires ORS_API_KEY (a free account at openrouteservice.org gives 2000
 requests/day, 40/minute - ample for this app's traffic). Every request
@@ -88,7 +92,7 @@ def _post(payload, timeout=25):
     }
 
 
-def round_trip_route(lat, lon, length_m, seed=None, points=None):
+def round_trip_route(lat, lon, length_m, seed=None, points=None, avoid_polygon=None):
     """A loop of approximately length_m starting and ending at (lat, lon).
 
     points controls how many route "shape points" ORS considers when
@@ -97,14 +101,25 @@ def round_trip_route(lat, lon, length_m, seed=None, points=None):
     lets a specific loop be reproduced (e.g. re-rendering a cached result)
     rather than generating a different random loop of the same length
     each time.
+
+    avoid_polygon, if given, is a GeoJSON Polygon/MultiPolygon geometry
+    (not a Feature) passed as ORS's options.avoid_polygons - any area the
+    router may not route through at all, as a hard constraint rather than
+    a mere starting-point bias (see park_walks._avoid_polygon_outside_park).
+    If the only roads/paths that could satisfy length_m all fall inside the
+    avoided area, ORS raises a RoutingError (via _post's "no route" check)
+    rather than silently routing through it.
     """
     round_trip = {"length": length_m}
     if points is not None:
         round_trip["points"] = points
     if seed is not None:
         round_trip["seed"] = seed
+    options = {"round_trip": round_trip}
+    if avoid_polygon is not None:
+        options["avoid_polygons"] = avoid_polygon
     payload = {
         "coordinates": [[lon, lat]],
-        "options": {"round_trip": round_trip},
+        "options": options,
     }
     return _post(payload)

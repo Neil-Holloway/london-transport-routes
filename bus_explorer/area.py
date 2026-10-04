@@ -26,6 +26,22 @@ def _project(points):
     return [((lon - mean_lon) * lon_scale, (lat - mean_lat) * lat_scale) for lat, lon in points]
 
 
+def ring_is_ccw(points):
+    """True if the ring winds counterclockwise in (lon, lat) order - the
+    convention GeoJSON (RFC 7946) uses to tell an exterior ring from a
+    hole (used by park_walks._avoid_polygon_outside_park to orient the
+    "hole" cut out of its avoid-polygon correctly). This is a planar
+    winding-direction property of the raw lon/lat coordinates, not a
+    physical-distance one, so it's computed directly rather than via
+    _project's metre projection - same shoelace formula as ring_area_m2,
+    just unprojected and keeping its sign.
+    """
+    total = 0.0
+    for (lat1, lon1), (lat2, lon2) in zip(points, points[1:] + points[:1]):
+        total += lon1 * lat2 - lon2 * lat1
+    return total > 0
+
+
 def ring_area_m2(points):
     """Shoelace formula on a closed (or implicitly-closed) ring of
     (lat, lon) points. Returns a positive area regardless of winding

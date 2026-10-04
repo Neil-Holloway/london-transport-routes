@@ -8,9 +8,10 @@
    area_filter.MIN_AREA_M2) and keep the largest same-named match if more
    than one survives (e.g. a park split across several OSM elements).
 3. Generate a real, path-following loop route via OpenRouteService
-   (routing_client.py), started from the park's centroid so the route
-   actually goes through the park rather than skirting it on the
-   surrounding streets (see _park_loop_route).
+   (routing_client.py), started from the park's centroid and hard-
+   constrained with an avoid_polygon covering everything outside the park,
+   so the route is physically unable to leave it to make up the requested
+   distance (see _park_loop_route/_avoid_polygon_outside_park).
 4. Persist the result (db.upsert_park_walk), cached per (park name, target
    distance) so re-viewing the same search doesn't re-call the routing
    engine.
@@ -28,11 +29,25 @@ favour of this simpler direct-by-name design - entering a park's own name
 and getting a loop walk within just that park.
 """
 
+import math
 import re
 
 from . import area, area_filter, db, overpass_client, routing_client
 
 TARGET_DISTANCES_M = [5000, 10000, 15000]
+
+# How far beyond a park's own mapped boundary the avoid-polygon's "hole"
+# (see _avoid_polygon_outside_park) is padded, so a real path that runs
+# right along - or marginally outside, from ordinary OSM tracing
+# imprecision - the boundary isn't itself excluded from routing.
+AVOID_POLYGON_MARGIN_M = 150
+
+# ORS's avoid_polygons has a practical vertex budget - a big relation-based
+# park (e.g. assembled from many short OSM ways) can have a boundary ring
+# with hundreds of points, far more precision than this hole actually
+# needs. Rings longer than this are decimated (see _simplify_ring) before
+# being sent.
+MAX_AVOID_RING_POINTS = 200
 
 
 class ParkNotFoundError(Exception):
@@ -77,23 +92,117 @@ def _load_parks_by_name(name):
     return parks
 
 
+def _simplify_ring(ring, max_points=MAX_AVOID_RING_POINTS):
+    """Decimates ring to at most max_points by taking every Nth point - a
+    rougher but still closed approximation of the same shape, cheap enough
+    for ORS's avoid_polygons to accept for even a very detailed boundary.
+    Not needed (and not applied) for rings already within the budget.
+    """
+    if len(ring) <= max_points:
+        return ring
+    stride = math.ceil(len(ring) / max_points)
+    simplified = ring[::stride]
+    if simplified[-1] != ring[-1]:
+        simplified.append(ring[-1])
+    return simplified
+
+
+def _avoid_polygon_outside_park(ring, margin_m=AVOID_POLYGON_MARGIN_M):
+    """A GeoJSON Polygon-with-hole covering the area around park's ring but
+    not the ring's own interior - passed to ORS as options.avoid_polygons
+    so a round-trip loop (see _park_loop_route) is physically unable to
+    leave the park via the surrounding street grid, rather than merely
+    being nudged inward by its start point.
+
+    The exterior is a bounding box around the park padded by margin_m; the
+    hole is the park's own boundary, also padded by margin_m so a real path
+    running right along (or marginally outside, from ordinary OSM tracing
+    imprecision) the mapped boundary isn't itself excluded. Any road or
+    path outside the bounding box is unreachable anyway, since it would
+    have to cross the avoided donut in between to get there.
+    """
+    ring = _simplify_ring(ring)
+    padded_ring = _pad_ring_outward(ring, margin_m)
+
+    # Exterior ring: a bounding box around the *padded* ring (plus a small
+    # extra buffer) rather than the original - so it's guaranteed to fully
+    # contain the hole below regardless of the park's shape (a purely
+    # radial pad from the centroid doesn't grow every point's bounding box
+    # by exactly margin_m in each axis - e.g. for a long, thin park - so
+    # sizing the exterior off the original ring's bbox could leave the
+    # hole poking outside it at the tips, which is invalid GeoJSON).
+    lats = [p[0] for p in padded_ring]
+    lons = [p[1] for p in padded_ring]
+    mean_lat = sum(lats) / len(lats)
+    extra_pad_m = 50
+    lat_pad = extra_pad_m / 111_320
+    lon_pad = extra_pad_m / (111_320 * max(math.cos(math.radians(mean_lat)), 0.01))
+    min_lat, max_lat = min(lats) - lat_pad, max(lats) + lat_pad
+    min_lon, max_lon = min(lons) - lon_pad, max(lons) + lon_pad
+
+    # Exterior ring: wound counterclockwise in (lon, lat) order - GeoJSON's
+    # convention for an outer ring.
+    exterior = [
+        [min_lon, min_lat], [max_lon, min_lat], [max_lon, max_lat], [min_lon, max_lat], [min_lon, min_lat],
+    ]
+
+    # Hole: the park's own padded boundary, wound clockwise - the opposite
+    # of the exterior, GeoJSON's convention for an interior ring. The
+    # source ring's winding direction depends on how its OSM way was
+    # drawn, so it's only reversed if it isn't already clockwise.
+    hole = [[lon, lat] for lat, lon in padded_ring]
+    if hole[0] != hole[-1]:
+        hole.append(hole[0])
+    if area.ring_is_ccw(padded_ring):
+        hole.reverse()
+
+    return {"type": "Polygon", "coordinates": [exterior, hole]}
+
+
+def _pad_ring_outward(ring, margin_m):
+    """Pushes each point of ring outward from the ring's own centroid by
+    margin_m - a simple, non-GIS-grade boundary dilation (consistent with
+    this app's other flat-earth approximations - see area.py), good enough
+    to give real boundary-hugging paths a little breathing room without
+    needing a proper polygon-buffer library.
+    """
+    centroid = area.ring_centroid(ring)
+    lat_scale = 111_320
+    lon_scale = 111_320 * max(math.cos(math.radians(centroid[0])), 0.01)
+    padded = []
+    for lat, lon in ring:
+        dy = (lat - centroid[0]) * lat_scale
+        dx = (lon - centroid[1]) * lon_scale
+        dist = math.hypot(dx, dy)
+        if dist < 1e-6:
+            padded.append((lat, lon))
+            continue
+        scale = (dist + margin_m) / dist
+        padded.append((centroid[0] + dy * scale / lat_scale, centroid[1] + dx * scale / lon_scale))
+    return padded
+
+
 def _park_loop_route(park, target_length_m):
     """A round-trip loop of approximately target_length_m through park.
 
-    Started from the park's centroid rather than its boundary - a bare
-    round_trip from the boundary was tried first and measured to just skirt
-    the park on the surrounding streets rather than actually walking
-    through it. ORS's routing graph has no notion that the start point is a
-    park, only a coordinate, so when a park's own path network is thinner
-    than the streets right outside it (true for many smaller London parks
-    in OSM), round_trip's optimiser can satisfy the requested length
-    entirely from the street grid without ever dipping into the park.
-    Starting from deep inside instead means every route out of (and back
-    to) that point has to use a path genuinely inside the park for at least
-    its first and last stretch.
+    Started from the park's centroid rather than its boundary, and
+    constrained with avoid_polygon (see _avoid_polygon_outside_park) so the
+    whole loop - not just its first and last stretch - is physically unable
+    to leave the park. ORS's routing graph has no notion that the start
+    point is a park, only a coordinate: a bare round_trip from the
+    boundary, and later just a centroid start with no avoid_polygon, were
+    both tried first and measured to let the route skirt the park on the
+    surrounding streets to make up the requested length, since round_trip's
+    length-targeting has no concept of staying inside an area at all.
+
+    If the park's own mapped paths can't support target_length_m without
+    leaving the avoided area, ORS raises routing_client.RoutingError
+    (caller's responsibility to turn that into a sensible message) rather
+    than silently routing through the streets outside.
     """
     centroid = park["centroid"]
-    return routing_client.round_trip_route(centroid[0], centroid[1], target_length_m)
+    avoid_polygon = _avoid_polygon_outside_park(park["ring"])
+    return routing_client.round_trip_route(centroid[0], centroid[1], target_length_m, avoid_polygon=avoid_polygon)
 
 
 def find_park_walk(park_name, target_distance_m):
@@ -106,7 +215,14 @@ def find_park_walk(park_name, target_distance_m):
     # park", same approach as park_walks.py's old _dedupe_parks.
     park = max(parks, key=lambda p: p["area_m2"])
 
-    route = _park_loop_route(park, target_distance_m)
+    try:
+        route = _park_loop_route(park, target_distance_m)
+    except routing_client.RoutingError as e:
+        raise routing_client.RoutingError(
+            f"{park['name']}'s mapped paths don't seem to support a "
+            f"{target_distance_m / 1000:g} km loop without leaving the park. "
+            "Try a shorter distance."
+        ) from e
 
     search_key = _search_key(park_name)
     row = {
