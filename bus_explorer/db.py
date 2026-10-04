@@ -102,19 +102,6 @@ def init_db():
                     PRIMARY KEY (search_key, attraction_id)
                 );
 
-                CREATE TABLE IF NOT EXISTS park_walks (
-                    search_key TEXT NOT NULL,
-                    park_name TEXT NOT NULL,
-                    distance_m DOUBLE PRECISION,
-                    duration_s DOUBLE PRECISION,
-                    start_lat DOUBLE PRECISION,
-                    start_lon DOUBLE PRECISION,
-                    route_geometry JSONB,
-                    instructions JSONB,
-                    created_at TIMESTAMPTZ DEFAULT now(),
-                    PRIMARY KEY (search_key)
-                );
-
                 CREATE TABLE IF NOT EXISTS visits (
                     attraction_id TEXT NOT NULL REFERENCES attractions(id),
                     visitor_name TEXT NOT NULL,
@@ -164,46 +151,9 @@ def init_db():
             if "ignored" not in visit_cols:
                 cur.execute("ALTER TABLE visits ADD COLUMN ignored INTEGER NOT NULL DEFAULT 0")
 
-            # Migration for park_walks rows created before step-by-step
-            # walking instructions were captured alongside the route geometry.
-            cur.execute(
-                """
-                SELECT column_name FROM information_schema.columns
-                WHERE table_name = 'park_walks'
-                """
-            )
-            park_walk_cols = {row["column_name"] for row in cur.fetchall()}
-            if "instructions" not in park_walk_cols:
-                cur.execute("ALTER TABLE park_walks ADD COLUMN instructions JSONB")
-
-            # Migration for park_walks rows created before Park Walks was
-            # simplified from "search near a starting place, joining a
-            # second park if needed" down to "enter a park's own name" -
-            # place_name (the old starting-place search term) becomes
-            # park_name (the park itself); mode/park_names were only
-            # meaningful for the old joined-route case and no longer apply.
-            if "park_name" not in park_walk_cols and "place_name" in park_walk_cols:
-                cur.execute("ALTER TABLE park_walks RENAME COLUMN place_name TO park_name")
-            if "mode" in park_walk_cols:
-                cur.execute("ALTER TABLE park_walks DROP COLUMN mode")
-            if "park_names" in park_walk_cols:
-                cur.execute("ALTER TABLE park_walks DROP COLUMN park_names")
-
-            # Migration for park_walks rows created before the 5/10/15km
-            # target-distance choice was dropped in favour of always
-            # generating one route sized to the specific park's own paths -
-            # target_distance_m no longer means anything, and dropping it
-            # changes the primary key from (search_key, target_distance_m)
-            # to search_key alone, which could otherwise collide across the
-            # old per-distance rows. park_walks is just a cache of
-            # generated routes (regenerated on next search), so clearing it
-            # outright is simpler and safer than picking one surviving row
-            # per search_key to keep.
-            if "target_distance_m" in park_walk_cols:
-                cur.execute("DELETE FROM park_walks")
-                cur.execute("ALTER TABLE park_walks DROP CONSTRAINT park_walks_pkey")
-                cur.execute("ALTER TABLE park_walks DROP COLUMN target_distance_m")
-                cur.execute("ALTER TABLE park_walks ADD PRIMARY KEY (search_key)")
+            # Park Walks (routing within a single named park) was removed -
+            # drop its cache table from any database created before this.
+            cur.execute("DROP TABLE IF EXISTS park_walks")
 
 
 def _run(conn, sql, params):
@@ -522,45 +472,6 @@ def max_explored_train_stops(search_key):
             if not row or row["walk_m"] is None:
                 return None
             return row["walk_m"], row["stops"]
-
-
-def upsert_park_walk(row, conn=None):
-    """Caches one generated Park Walks route, keyed by search_key -
-    re-searching the same park reuses the cached route rather than calling
-    the routing engine again (see routing_client.py's ORS rate limits).
-    """
-    _run(
-        conn,
-        """
-        INSERT INTO park_walks
-            (search_key, park_name,
-             distance_m, duration_s, start_lat, start_lon, route_geometry, instructions)
-        VALUES
-            (%(search_key)s, %(park_name)s,
-             %(distance_m)s, %(duration_s)s, %(start_lat)s, %(start_lon)s, %(route_geometry)s, %(instructions)s)
-        ON CONFLICT (search_key) DO UPDATE SET
-            park_name=excluded.park_name,
-            distance_m=excluded.distance_m, duration_s=excluded.duration_s,
-            start_lat=excluded.start_lat, start_lon=excluded.start_lon,
-            route_geometry=excluded.route_geometry, instructions=excluded.instructions
-        """,
-        {
-            **row,
-            "route_geometry": psycopg2.extras.Json(row["route_geometry"]),
-            "instructions": psycopg2.extras.Json(row.get("instructions") or []),
-        },
-    )
-
-
-def get_park_walk(search_key):
-    with get_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT * FROM park_walks WHERE search_key = %s",
-                (search_key,),
-            )
-            row = cur.fetchone()
-            return dict(row) if row else None
 
 
 def clear_car_attractions(search_key, conn=None):

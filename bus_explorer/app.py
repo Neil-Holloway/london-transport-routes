@@ -14,8 +14,6 @@ from .car_explorer import _search_key as _car_search_key
 from .car_explorer import find_by_car
 from .categorise import CATEGORIES
 from .categorise_activity import CATEGORIES as ACTIVITY_CATEGORIES
-from .park_walks import ParkNotFoundError, find_park_walk
-from .park_walks import _search_key as _park_walk_search_key
 from .pipeline import explore_route
 from .tfl_client import RouteNotFoundError
 from .train_explorer import PlaceNotFoundError as TrainPlaceNotFoundError
@@ -435,45 +433,6 @@ def train_results(search_key):
         show_visited="1" if show_visited else "0",
         show_ignored="1" if show_ignored else "0",
     )
-
-
-@app.route("/park-walks")
-def park_walks_index():
-    return render_template("park_walks_index.html")
-
-
-@app.route("/park-walks/search", methods=["POST"])
-def park_walks_search():
-    park_name = request.form.get("park_name", "").strip()
-    force = request.form.get("force") == "1"
-
-    if not park_name:
-        return render_template("park_walks_index.html", error="Please enter a park name.")
-
-    search_key = _park_walk_search_key(park_name)
-    cached = None if force else db.get_park_walk(search_key)
-
-    if cached is None:
-        try:
-            find_park_walk(park_name)
-        except ParkNotFoundError as e:
-            return render_template("park_walks_index.html", error=str(e))
-        except RuntimeError as e:
-            return render_template(
-                "park_walks_index.html",
-                error=f"Could not generate a route right now ({e}). Please try again shortly.",
-            )
-
-    return redirect(url_for("park_walks_results", search_key=search_key))
-
-
-@app.route("/park-walks/<search_key>")
-def park_walks_results(search_key):
-    walk = db.get_park_walk(search_key)
-    if not walk:
-        return redirect(url_for("park_walks_index"))
-
-    return render_template("park_walks_results.html", walk=walk)
 
 
 @app.route("/attraction/<path:attraction_id>")

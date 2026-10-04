@@ -26,22 +26,6 @@ def _project(points):
     return [((lon - mean_lon) * lon_scale, (lat - mean_lat) * lat_scale) for lat, lon in points]
 
 
-def ring_is_ccw(points):
-    """True if the ring winds counterclockwise in (lon, lat) order - the
-    convention GeoJSON (RFC 7946) uses to tell an exterior ring from a
-    hole (used by park_walks._avoid_polygon_outside_park to orient the
-    "hole" cut out of its avoid-polygon correctly). This is a planar
-    winding-direction property of the raw lon/lat coordinates, not a
-    physical-distance one, so it's computed directly rather than via
-    _project's metre projection - same shoelace formula as ring_area_m2,
-    just unprojected and keeping its sign.
-    """
-    total = 0.0
-    for (lat1, lon1), (lat2, lon2) in zip(points, points[1:] + points[:1]):
-        total += lon1 * lat2 - lon2 * lat1
-    return total > 0
-
-
 def ring_area_m2(points):
     """Shoelace formula on a closed (or implicitly-closed) ring of
     (lat, lon) points. Returns a positive area regardless of winding
@@ -55,100 +39,6 @@ def ring_area_m2(points):
     for (x1, y1), (x2, y2) in zip(projected, projected[1:] + projected[:1]):
         total += x1 * y2 - x2 * y1
     return abs(total) / 2
-
-
-def ring_perimeter_m(points):
-    """Sum of consecutive segment lengths around a closed (or implicitly-
-    closed) ring of (lat, lon) points, in metres - same projection as
-    ring_area_m2, so it's consistent with the area this module already
-    computes rather than mixing in a separate spherical calculation. Used
-    by park_walks.py as a natural, park-specific starting point for how
-    long a loop through it should be (see park_walks._candidate_loop_lengths_m),
-    now that Park Walks no longer asks the user for a target distance.
-    Returns 0.0 for fewer than 2 points.
-    """
-    if len(points) < 2:
-        return 0.0
-    projected = _project(points)
-    total = 0.0
-    for (x1, y1), (x2, y2) in zip(projected, projected[1:] + projected[:1]):
-        total += math.hypot(x2 - x1, y2 - y1)
-    return total
-
-
-def ring_centroid(points):
-    """Area-weighted centroid of a closed (or implicitly-closed) ring of
-    (lat, lon) points - the standard polygon centroid formula, projected
-    the same way as ring_area_m2. Falls back to a simple
-    average of the points for degenerate rings (fewer than 3 points, or
-    zero/near-zero area, e.g. a self-intersecting or sliver boundary)
-    where the area-weighted formula divides by ~0.
-    """
-    if len(points) < 3:
-        lat = sum(p[0] for p in points) / len(points)
-        lon = sum(p[1] for p in points) / len(points)
-        return (lat, lon)
-
-    mean_lat = sum(p[0] for p in points) / len(points)
-    mean_lon = sum(p[1] for p in points) / len(points)
-    lat_scale = 111_320
-    lon_scale = 111_320 * max(math.cos(math.radians(mean_lat)), 0.01)
-    projected = _project(points)
-
-    signed_area = 0.0
-    cx = 0.0
-    cy = 0.0
-    for (x1, y1), (x2, y2) in zip(projected, projected[1:] + projected[:1]):
-        cross = x1 * y2 - x2 * y1
-        signed_area += cross
-        cx += (x1 + x2) * cross
-        cy += (y1 + y2) * cross
-    signed_area /= 2
-
-    if abs(signed_area) < 1e-6:
-        lat = sum(p[0] for p in points) / len(points)
-        lon = sum(p[1] for p in points) / len(points)
-        return (lat, lon)
-
-    cx /= 6 * signed_area
-    cy /= 6 * signed_area
-    return (mean_lat + cy / lat_scale, mean_lon + cx / lon_scale)
-
-
-def element_ring(el):
-    """el is a raw Overpass element from an 'out geom' query (way or
-    relation). Returns a single representative boundary ring - a list of
-    (lat, lon) points - or [] if it has no usable geometry.
-
-    For a way, that's just its own geometry. For a relation (multipolygon
-    park), picks the largest-area 'outer' member rather than stitching every
-    member into one ring - mirrors element_area_m2's outer/inner handling,
-    and is good enough for "roughly where is this park's edge" (perimeter/
-    centroid/nearest-point purposes) without needing a proper multipolygon
-    assembly for parks that are split into several outer ways (e.g. around
-    an inlet or a road crossing the boundary).
-    """
-    if el["type"] == "way":
-        geometry = el.get("geometry") or []
-        return [(pt["lat"], pt["lon"]) for pt in geometry if pt]
-
-    if el["type"] == "relation":
-        best_ring = []
-        best_area = -1.0
-        for member in el.get("members", []):
-            if member.get("role") == "inner":
-                continue
-            geometry = member.get("geometry") or []
-            points = [(pt["lat"], pt["lon"]) for pt in geometry if pt]
-            if len(points) < 3:
-                continue
-            candidate_area = ring_area_m2(points)
-            if candidate_area > best_area:
-                best_area = candidate_area
-                best_ring = points
-        return best_ring
-
-    return []
 
 
 def element_area_m2(el):

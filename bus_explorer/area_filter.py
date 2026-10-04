@@ -55,19 +55,6 @@ def _is_sports_or_school_land(tags):
     return False
 
 
-def is_walkable_park(tags):
-    """Combines is_park_candidate with the access/sports-or-school-land
-    checks below - the single predicate park_walks.py needs to decide
-    whether a park/garden/nature_reserve is worth routing a walk through,
-    without reaching into this module's other, still-private helpers.
-    """
-    return (
-        is_park_candidate(tags)
-        and _is_publicly_accessible(tags)
-        and not _is_sports_or_school_land(tags)
-    )
-
-
 def filter_by_area(candidates, min_area_m2=MIN_AREA_M2):
     """candidates: list of dicts with at least 'osm_type', 'osm_id', 'tags'.
 

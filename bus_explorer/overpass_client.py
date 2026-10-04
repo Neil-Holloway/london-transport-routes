@@ -40,7 +40,6 @@ longer default timeout below).
 """
 
 import json
-import re
 import time
 import urllib.error
 import urllib.parse
@@ -52,12 +51,6 @@ from . import area
 MIRRORS = [
     "https://overpass.openstreetmap.fr/api/interpreter",
 ]
-
-# Greater London, in Overpass's (min_lat, min_lon, max_lat, max_lon) order -
-# converted from geocode._LONDON_VIEWBOX (Nominatim's left,top,right,bottom
-# lon/lat order), so a by-name park lookup (find_parks_by_name) is scoped to
-# London rather than searching the whole planet for a common park name.
-LONDON_BBOX = (51.28, -0.52, 51.70, 0.30)
 
 USER_AGENT = "BusExplorer/0.1 (https://github.com/Georege-Holloway/london-transport-routes)"
 
@@ -297,35 +290,6 @@ def fetch_areas(refs, timeout_s=30):
     for el in elements:
         areas[(el["type"], el["id"])] = area.element_area_m2(el)
     return areas
-
-
-def find_parks_by_name(name, timeout_s=50):
-    """Query Overpass for park/garden/nature_reserve ways and relations
-    across Greater London whose name matches `name` exactly
-    (case-insensitive), with full boundary geometry - used by
-    park_walks.py's direct "enter a park's name" lookup. Returns the park's
-    actual shape (area.ring_centroid/element_ring) rather than just a
-    representative centre point the way find_candidates's normal 'out
-    center tags' query returns, since park_walks.py needs a point deep
-    inside the park to start a loop route from (see park_walks._park_loop_route).
-
-    name is regex-escaped before being embedded in the Overpass QL query
-    string, since it comes straight from user input and Overpass's
-    ["key"~"regex"] tag filter would otherwise let arbitrary regex (or
-    query-breaking quote characters) through.
-
-    Returns a list of raw elements (dicts with 'type', 'id', 'tags', and
-    either 'geometry' (way) or 'members' (relation)), unfiltered by
-    _normalise_elements.
-    """
-    min_lat, min_lon, max_lat, max_lon = LONDON_BBOX
-    bbox = f"({min_lat},{min_lon},{max_lat},{max_lon})"
-    escaped = re.escape(name.strip()).replace('"', '\\"')
-    clause = f'["leisure"~"^(park|garden|nature_reserve)$"]["name"~"^{escaped}$",i]'
-    body = f"way{clause}{bbox};\nrel{clause}{bbox};"
-    # See _build_query for why the nonce comment is here.
-    query = f"[out:json][timeout:{timeout_s}];\n// nonce:{uuid.uuid4()}\n({body}\n);\nout geom;"
-    return _execute(query, rounds=1, timeout=timeout_s + 15, normalise=False)
 
 
 def _normalise_elements(elements):
