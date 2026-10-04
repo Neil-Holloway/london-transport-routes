@@ -48,6 +48,11 @@ DEFAULT_MAX_WALK_TO_PARK_M = 2000
 # which is exactly what joining to a second park is for).
 SLACK_FACTOR = 1.5
 
+# Below this, a per-park loop isn't worth generating as its own leg (ORS's
+# round_trip needs a meaningfully positive length anyway) - see
+# _build_joined_route.
+MIN_LOOP_M = 300
+
 TARGET_DISTANCES_M = [5000, 10000, 15000]
 
 
@@ -119,6 +124,51 @@ def _is_single_park_feasible(park, target_distance_m):
     return park["perimeter_m"] * SLACK_FACTOR >= target_distance_m
 
 
+def _build_joined_route(park1, park2, target_distance_m):
+    """Compose a joined two-park route out of three real ORS calls, rather
+    than one explicit-waypoint directions_route through both parks - that
+    was tried first and measured to just take whatever the shortest real
+    path between the waypoints happened to be (e.g. ~2.6-3.9km against a
+    requested 5/10/15km, identical regardless of target_distance_m), since
+    ORS's directions mode has no concept of a target length at all. Here,
+    only the leg between the two parks (a fixed, real distance - can't be
+    stretched) uses directions_route; the two loops inside each park use
+    round_trip, which does aim for a given length, sized so leg + loop1 +
+    loop2 + leg (walking the join both ways) adds up to roughly
+    target_distance_m.
+
+    Returns None if the parks are too far apart to leave a meaningful
+    length for either park's loop - the caller falls back to a single-park
+    route at the full target distance in that case.
+    """
+    leg = routing_client.directions_route([park1["entrance"], park2["entrance"]])
+    d_leg = leg["distance_m"] or 0
+
+    remaining = target_distance_m - 2 * d_leg
+    if remaining < 2 * MIN_LOOP_M:
+        return None
+
+    total_perim = park1["perimeter_m"] + park2["perimeter_m"]
+    l1 = max(MIN_LOOP_M, remaining * park1["perimeter_m"] / total_perim)
+    l2 = max(MIN_LOOP_M, remaining - l1)
+
+    loop1 = routing_client.round_trip_route(park1["entrance"][0], park1["entrance"][1], l1)
+    loop2 = routing_client.round_trip_route(park2["entrance"][0], park2["entrance"][1], l2)
+
+    coordinates = (
+        loop1["coordinates"]
+        + leg["coordinates"]
+        + loop2["coordinates"]
+        + list(reversed(leg["coordinates"]))
+    )
+    # The return leg isn't routed separately - ORS's foot-walking paths are
+    # assumed symmetric in each direction, so the outbound leg's distance/
+    # duration is just doubled rather than making a 4th API call.
+    distance_m = (loop1["distance_m"] or 0) + (loop2["distance_m"] or 0) + 2 * d_leg
+    duration_s = (loop1["duration_s"] or 0) + (loop2["duration_s"] or 0) + 2 * (leg["duration_s"] or 0)
+    return {"coordinates": coordinates, "distance_m": distance_m, "duration_s": duration_s}
+
+
 def find_park_walk(place_name, target_distance_m, max_walk_to_park_m=DEFAULT_MAX_WALK_TO_PARK_M):
     coords = geocode.geocode_place(place_name)
     if not coords:
@@ -149,32 +199,31 @@ def find_park_walk(place_name, target_distance_m, max_walk_to_park_m=DEFAULT_MAX
 
     other_parks = [p for p in parks if p is not park1]
 
-    if _is_single_park_feasible(park1, target_distance_m) or not other_parks:
-        route = routing_client.round_trip_route(
-            park1["entrance"][0], park1["entrance"][1], target_distance_m
-        )
-        mode = "single"
-        park_names = park1["name"]
-    else:
+    route = None
+    mode = "single"
+    park_names = park1["name"]
+
+    if not _is_single_park_feasible(park1, target_distance_m) and other_parks:
         park2 = min(
             other_parks,
             key=lambda p: scoring.haversine_m(
                 park1["centroid"][0], park1["centroid"][1], p["centroid"][0], p["centroid"][1]
             ),
         )
-        join_point = area.nearest_point_on_ring(
-            park2["ring"], park1["centroid"][0], park1["centroid"][1]
+        route = _build_joined_route(park1, park2, target_distance_m)
+        if route is not None:
+            mode = "joined"
+            park_names = f"{park1['name']} + {park2['name']}"
+
+    if route is None:
+        # Either park1 alone is big enough, there's no other park to join
+        # to, or the nearest other park is too far away to leave a
+        # meaningful length for either park's loop (see
+        # _build_joined_route) - a single-park loop at the full requested
+        # distance is the best remaining option.
+        route = routing_client.round_trip_route(
+            park1["entrance"][0], park1["entrance"][1], target_distance_m
         )
-        waypoints = [
-            park1["entrance"],
-            park1["centroid"],
-            join_point,
-            park2["centroid"],
-            park1["entrance"],
-        ]
-        route = routing_client.directions_route(waypoints)
-        mode = "joined"
-        park_names = f"{park1['name']} + {park2['name']}"
 
     search_key = _search_key(place_name)
     row = {
