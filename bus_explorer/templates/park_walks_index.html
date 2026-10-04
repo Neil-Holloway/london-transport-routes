@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Park Walks — Bus Explorer{% endblock %}
+{% block content %}
+<div class="card center-form">
+  <h1>Park Walks</h1>
+  <p class="hint">Enter a starting place to generate a walking loop through a nearby large park (joining to a second park if needed to reach the chosen distance)</p>
+
+  {% if error %}
+    <p class="error">{{ error }}</p>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('park_walks_search') }}">
+    <label>
+      Starting from
+      <input type="text" name="place_name" placeholder="eg beckenham" required autofocus>
+    </label>
+
+    <label>
+      Walk distance
+      <select name="target_distance_m">
+        {% for d in target_distances %}
+        <option value="{{ d }}" {{ 'selected' if d == 5000 }}>{{ (d / 1000) | round | int }} km</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <button type="submit">Generate a walk</button>
+  </form>
+  <p class="hint">Generating a route can take up to a minute the first time a place/distance combination is searched.</p>
+</div>
+{% endblock %}

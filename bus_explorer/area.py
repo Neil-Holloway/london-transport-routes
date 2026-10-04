@@ -41,6 +41,120 @@ def ring_area_m2(points):
     return abs(total) / 2
 
 
+def ring_perimeter_m(points):
+    """Sum of consecutive segment lengths around a closed (or implicitly-
+    closed) ring of (lat, lon) points, in metres - same projection as
+    ring_area_m2, so it's consistent with the area this module already
+    computes rather than mixing in a separate spherical calculation.
+    Returns 0.0 for fewer than 2 points.
+    """
+    if len(points) < 2:
+        return 0.0
+    projected = _project(points)
+    total = 0.0
+    for (x1, y1), (x2, y2) in zip(projected, projected[1:] + projected[:1]):
+        total += math.hypot(x2 - x1, y2 - y1)
+    return total
+
+
+def ring_centroid(points):
+    """Area-weighted centroid of a closed (or implicitly-closed) ring of
+    (lat, lon) points - the standard polygon centroid formula, projected
+    the same way as ring_area_m2/ring_perimeter_m. Falls back to a simple
+    average of the points for degenerate rings (fewer than 3 points, or
+    zero/near-zero area, e.g. a self-intersecting or sliver boundary)
+    where the area-weighted formula divides by ~0.
+    """
+    if len(points) < 3:
+        lat = sum(p[0] for p in points) / len(points)
+        lon = sum(p[1] for p in points) / len(points)
+        return (lat, lon)
+
+    mean_lat = sum(p[0] for p in points) / len(points)
+    mean_lon = sum(p[1] for p in points) / len(points)
+    lat_scale = 111_320
+    lon_scale = 111_320 * max(math.cos(math.radians(mean_lat)), 0.01)
+    projected = _project(points)
+
+    signed_area = 0.0
+    cx = 0.0
+    cy = 0.0
+    for (x1, y1), (x2, y2) in zip(projected, projected[1:] + projected[:1]):
+        cross = x1 * y2 - x2 * y1
+        signed_area += cross
+        cx += (x1 + x2) * cross
+        cy += (y1 + y2) * cross
+    signed_area /= 2
+
+    if abs(signed_area) < 1e-6:
+        lat = sum(p[0] for p in points) / len(points)
+        lon = sum(p[1] for p in points) / len(points)
+        return (lat, lon)
+
+    cx /= 6 * signed_area
+    cy /= 6 * signed_area
+    return (mean_lat + cy / lat_scale, mean_lon + cx / lon_scale)
+
+
+def element_ring(el):
+    """el is a raw Overpass element from an 'out geom' query (way or
+    relation). Returns a single representative boundary ring - a list of
+    (lat, lon) points - or [] if it has no usable geometry.
+
+    For a way, that's just its own geometry. For a relation (multipolygon
+    park), picks the largest-area 'outer' member rather than stitching every
+    member into one ring - mirrors element_area_m2's outer/inner handling,
+    and is good enough for "roughly where is this park's edge" (perimeter/
+    centroid/nearest-point purposes) without needing a proper multipolygon
+    assembly for parks that are split into several outer ways (e.g. around
+    an inlet or a road crossing the boundary).
+    """
+    if el["type"] == "way":
+        geometry = el.get("geometry") or []
+        return [(pt["lat"], pt["lon"]) for pt in geometry if pt]
+
+    if el["type"] == "relation":
+        best_ring = []
+        best_area = -1.0
+        for member in el.get("members", []):
+            if member.get("role") == "inner":
+                continue
+            geometry = member.get("geometry") or []
+            points = [(pt["lat"], pt["lon"]) for pt in geometry if pt]
+            if len(points) < 3:
+                continue
+            candidate_area = ring_area_m2(points)
+            if candidate_area > best_area:
+                best_area = candidate_area
+                best_ring = points
+        return best_ring
+
+    return []
+
+
+def nearest_point_on_ring(ring, lat, lon):
+    """Nearest ring vertex to (lat, lon) - a proxy for "nearest park
+    entrance", since real OSM entrance/gate data isn't being fetched here.
+    Not GIS-grade (doesn't interpolate along edges, just picks the closest
+    existing vertex), consistent with this module's flat-earth approach
+    elsewhere. Returns None for an empty ring.
+    """
+    if not ring:
+        return None
+    lat_scale = 111_320
+    lon_scale = 111_320 * max(math.cos(math.radians(lat)), 0.01)
+    best_point = None
+    best_dist2 = None
+    for point in ring:
+        dy = (point[0] - lat) * lat_scale
+        dx = (point[1] - lon) * lon_scale
+        dist2 = dx * dx + dy * dy
+        if best_dist2 is None or dist2 < best_dist2:
+            best_dist2 = dist2
+            best_point = point
+    return best_point
+
+
 def element_area_m2(el):
     """el is a raw Overpass element from an 'out geom' query (way or
     relation). Returns the element's area in m^2, or 0.0 if it has no

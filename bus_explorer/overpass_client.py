@@ -292,6 +292,33 @@ def fetch_areas(refs, timeout_s=30):
     return areas
 
 
+def find_parks_with_geometry(min_lat, min_lon, max_lat, max_lon, timeout_s=50):
+    """Query Overpass for park/garden/nature_reserve ways and relations in a
+    bounding box, with full boundary geometry - used by park_walks.py, which
+    needs each park's actual shape (area.ring_perimeter_m/ring_centroid/
+    element_ring) to size it and find a start/end point on its boundary, not
+    just a representative centre point the way find_candidates's normal
+    'out center tags' query returns.
+
+    Unlike fetch_areas (which fetches geometry for already-known refs),
+    this discovers parks directly from a bounding box - what Park Walks
+    needs, since it's starting from a place name, not an existing
+    candidate list.
+
+    Nodes are excluded - a park with no boundary mapped, just a single
+    point, has nothing to walk around and can't be sized. Returns a list of
+    raw elements (dicts with 'type', 'id', 'tags', and either 'geometry'
+    (way) or 'members' (relation)) - the same shape fetch_areas consumes,
+    unfiltered by _normalise_elements.
+    """
+    bbox = f"({min_lat},{min_lon},{max_lat},{max_lon})"
+    clause = '["leisure"~"^(park|garden|nature_reserve)$"]'
+    body = f"way{clause}{bbox};\nrel{clause}{bbox};"
+    # See _build_query for why the nonce comment is here.
+    query = f"[out:json][timeout:{timeout_s}];\n// nonce:{uuid.uuid4()}\n({body}\n);\nout geom;"
+    return _execute(query, rounds=1, timeout=timeout_s + 15, normalise=False)
+
+
 def _normalise_elements(elements):
     out = []
     for el in elements:

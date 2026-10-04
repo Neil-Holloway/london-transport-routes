@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Park Walks — {{ walk.place_name }} — Bus Explorer{% endblock %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+{% endblock %}
+
+{% block content %}
+<h1>Park Walks — {{ walk.place_name }}</h1>
+
+<div class="card walk-summary">
+  <strong>{{ walk.park_names }}</strong>{% if walk.mode == 'joined' %} (joined route){% endif %}<br>
+  {% if walk.distance_m %}
+    Approximately <strong>{{ (walk.distance_m / 1000) | round(1) }} km</strong>
+    {% if walk.duration_s %}(around <strong>{{ (walk.duration_s / 60) | round | int }} minutes</strong>){% endif %}
+    — requested {{ (walk.target_distance_m / 1000) | round | int }} km
+  {% else %}
+    Route generated — requested {{ (walk.target_distance_m / 1000) | round | int }} km
+  {% endif %}
+</div>
+
+<div class="category-filter">
+  <form method="get" action="{{ url_for('park_walks_results', search_key=walk.search_key) }}">
+    <label>
+      Walk distance
+      <select name="distance" onchange="this.form.submit()">
+        {% for d in target_distances %}
+        <option value="{{ d }}" {{ 'selected' if d == walk.target_distance_m }}>{{ (d / 1000) | round | int }} km</option>
+        {% endfor %}
+      </select>
+    </label>
+  </form>
+</div>
+
+<div id="park-walk-map"
+     data-start-lat="{{ walk.start_lat }}"
+     data-start-lon="{{ walk.start_lon }}"
+     data-route='{{ walk.route_geometry | tojson }}'></div>
+
+<p class="hint"><a href="{{ url_for('park_walks_index') }}">Start a new Park Walk</a></p>
+{% endblock %}
+
+{% block scripts_extra %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+  (function () {
+    var el = document.getElementById('park-walk-map');
+    var startLat = parseFloat(el.dataset.startLat);
+    var startLon = parseFloat(el.dataset.startLon);
+    var route = JSON.parse(el.dataset.route || '[]');
+
+    var map = L.map(el).setView([startLat, startLon], 14);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 19
+    }).addTo(map);
+    L.marker([startLat, startLon]).addTo(map).bindPopup('Start');
+
+    if (route.length > 1) {
+      var line = L.polyline(route, { color: '#2a7d4f', weight: 4 }).addTo(map);
+      map.fitBounds(line.getBounds(), { padding: [20, 20] });
+    }
+  })();
+</script>
+{% endblock %}

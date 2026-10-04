@@ -102,6 +102,21 @@ def init_db():
                     PRIMARY KEY (search_key, attraction_id)
                 );
 
+                CREATE TABLE IF NOT EXISTS park_walks (
+                    search_key TEXT NOT NULL,
+                    target_distance_m INTEGER NOT NULL,
+                    place_name TEXT NOT NULL,
+                    mode TEXT NOT NULL,
+                    park_names TEXT NOT NULL,
+                    distance_m DOUBLE PRECISION,
+                    duration_s DOUBLE PRECISION,
+                    start_lat DOUBLE PRECISION,
+                    start_lon DOUBLE PRECISION,
+                    route_geometry JSONB,
+                    created_at TIMESTAMPTZ DEFAULT now(),
+                    PRIMARY KEY (search_key, target_distance_m)
+                );
+
                 CREATE TABLE IF NOT EXISTS visits (
                     attraction_id TEXT NOT NULL REFERENCES attractions(id),
                     visitor_name TEXT NOT NULL,
@@ -468,6 +483,42 @@ def max_explored_train_stops(search_key):
             if not row or row["walk_m"] is None:
                 return None
             return row["walk_m"], row["stops"]
+
+
+def upsert_park_walk(row, conn=None):
+    """Caches one generated Park Walks route, keyed by (search_key,
+    target_distance_m) - re-searching the same place for the same target
+    distance reuses the cached route rather than calling the routing engine
+    again (see routing_client.py's ORS rate limits).
+    """
+    _run(
+        conn,
+        """
+        INSERT INTO park_walks
+            (search_key, target_distance_m, place_name, mode, park_names,
+             distance_m, duration_s, start_lat, start_lon, route_geometry)
+        VALUES
+            (%(search_key)s, %(target_distance_m)s, %(place_name)s, %(mode)s, %(park_names)s,
+             %(distance_m)s, %(duration_s)s, %(start_lat)s, %(start_lon)s, %(route_geometry)s)
+        ON CONFLICT (search_key, target_distance_m) DO UPDATE SET
+            place_name=excluded.place_name, mode=excluded.mode, park_names=excluded.park_names,
+            distance_m=excluded.distance_m, duration_s=excluded.duration_s,
+            start_lat=excluded.start_lat, start_lon=excluded.start_lon,
+            route_geometry=excluded.route_geometry
+        """,
+        {**row, "route_geometry": psycopg2.extras.Json(row["route_geometry"])},
+    )
+
+
+def get_park_walk(search_key, target_distance_m):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM park_walks WHERE search_key = %s AND target_distance_m = %s",
+                (search_key, target_distance_m),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
 
 
 def clear_car_attractions(search_key, conn=None):
