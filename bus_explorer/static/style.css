@@ -67,6 +67,7 @@ main { max-width: 720px; margin: 0 auto; padding: 24px; }
 textarea { width: 100%; min-height: 60px; font-family: inherit; }
 
 #attraction-map { height: 260px; border-radius: 10px; margin: 12px 0 20px; }
+#park-walk-map { height: 400px; border-radius: 10px; margin: 12px 0 20px; }
 
 .walk-plan-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
 .walk-plan-bar button { padding: 8px 14px; border-radius: 6px; border: none; background: #1f2937; color: white; cursor: pointer; }
