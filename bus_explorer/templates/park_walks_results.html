@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Park Walks — {{ walk.place_name }} — Bus Explorer{% endblock %}
+{% block title %}Park Walks — {{ walk.park_name }} — Bus Explorer{% endblock %}
 
 {% block head_extra %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -7,10 +7,14 @@
 {% endblock %}
 
 {% block content %}
-<h1>Park Walks — {{ walk.place_name }}</h1>
+<div class="walk-plan-header no-print">
+  <h1>Park Walks — {{ walk.park_name }}</h1>
+  <button type="button" onclick="window.print()">Print this pack</button>
+</div>
+<h1 class="print-only">Park Walks — {{ walk.park_name }}</h1>
 
 <div class="card walk-summary">
-  <strong>{{ walk.park_names }}</strong>{% if walk.mode == 'joined' %} (joined route){% endif %}<br>
+  <strong>{{ walk.park_name }}</strong><br>
   {% if walk.distance_m %}
     Approximately <strong>{{ (walk.distance_m / 1000) | round(1) }} km</strong>
     {% if walk.duration_s %}(around <strong>{{ (walk.duration_s / 60) | round | int }} minutes</strong>){% endif %}
@@ -20,7 +24,7 @@
   {% endif %}
 </div>
 
-<div class="category-filter">
+<div class="category-filter no-print">
   <form method="get" action="{{ url_for('park_walks_results', search_key=walk.search_key) }}">
     <label>
       Walk distance
@@ -33,7 +37,7 @@
   </form>
 </div>
 
-<div id="park-walk-map"
+<div id="park-walk-map" class="no-print"
      data-start-lat="{{ walk.start_lat }}"
      data-start-lon="{{ walk.start_lon }}"
      data-route='{{ walk.route_geometry | tojson }}'></div>
@@ -57,14 +61,14 @@
 </div>
 {% endif %}
 
-<form method="post" action="{{ url_for('park_walks_search') }}" class="inline-form">
-  <input type="hidden" name="place_name" value="{{ walk.place_name }}">
+<form method="post" action="{{ url_for('park_walks_search') }}" class="inline-form no-print">
+  <input type="hidden" name="park_name" value="{{ walk.park_name }}">
   <input type="hidden" name="target_distance_m" value="{{ walk.target_distance_m }}">
   <input type="hidden" name="force" value="1">
   <button type="submit">Regenerate this route</button>
 </form>
 
-<p class="hint"><a href="{{ url_for('park_walks_index') }}">Start a new Park Walk</a></p>
+<p class="hint no-print"><a href="{{ url_for('park_walks_index') }}">Start a new Park Walk</a></p>
 {% endblock %}
 
 {% block scripts_extra %}

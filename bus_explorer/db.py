@@ -105,9 +105,7 @@ def init_db():
                 CREATE TABLE IF NOT EXISTS park_walks (
                     search_key TEXT NOT NULL,
                     target_distance_m INTEGER NOT NULL,
-                    place_name TEXT NOT NULL,
-                    mode TEXT NOT NULL,
-                    park_names TEXT NOT NULL,
+                    park_name TEXT NOT NULL,
                     distance_m DOUBLE PRECISION,
                     duration_s DOUBLE PRECISION,
                     start_lat DOUBLE PRECISION,
@@ -178,6 +176,19 @@ def init_db():
             park_walk_cols = {row["column_name"] for row in cur.fetchall()}
             if "instructions" not in park_walk_cols:
                 cur.execute("ALTER TABLE park_walks ADD COLUMN instructions JSONB")
+
+            # Migration for park_walks rows created before Park Walks was
+            # simplified from "search near a starting place, joining a
+            # second park if needed" down to "enter a park's own name" -
+            # place_name (the old starting-place search term) becomes
+            # park_name (the park itself); mode/park_names were only
+            # meaningful for the old joined-route case and no longer apply.
+            if "park_name" not in park_walk_cols and "place_name" in park_walk_cols:
+                cur.execute("ALTER TABLE park_walks RENAME COLUMN place_name TO park_name")
+            if "mode" in park_walk_cols:
+                cur.execute("ALTER TABLE park_walks DROP COLUMN mode")
+            if "park_names" in park_walk_cols:
+                cur.execute("ALTER TABLE park_walks DROP COLUMN park_names")
 
 
 def _run(conn, sql, params):
@@ -500,7 +511,7 @@ def max_explored_train_stops(search_key):
 
 def upsert_park_walk(row, conn=None):
     """Caches one generated Park Walks route, keyed by (search_key,
-    target_distance_m) - re-searching the same place for the same target
+    target_distance_m) - re-searching the same park for the same target
     distance reuses the cached route rather than calling the routing engine
     again (see routing_client.py's ORS rate limits).
     """
@@ -508,13 +519,13 @@ def upsert_park_walk(row, conn=None):
         conn,
         """
         INSERT INTO park_walks
-            (search_key, target_distance_m, place_name, mode, park_names,
+            (search_key, target_distance_m, park_name,
              distance_m, duration_s, start_lat, start_lon, route_geometry, instructions)
         VALUES
-            (%(search_key)s, %(target_distance_m)s, %(place_name)s, %(mode)s, %(park_names)s,
+            (%(search_key)s, %(target_distance_m)s, %(park_name)s,
              %(distance_m)s, %(duration_s)s, %(start_lat)s, %(start_lon)s, %(route_geometry)s, %(instructions)s)
         ON CONFLICT (search_key, target_distance_m) DO UPDATE SET
-            place_name=excluded.place_name, mode=excluded.mode, park_names=excluded.park_names,
+            park_name=excluded.park_name,
             distance_m=excluded.distance_m, duration_s=excluded.duration_s,
             start_lat=excluded.start_lat, start_lon=excluded.start_lon,
             route_geometry=excluded.route_geometry, instructions=excluded.instructions

@@ -41,26 +41,10 @@ def ring_area_m2(points):
     return abs(total) / 2
 
 
-def ring_perimeter_m(points):
-    """Sum of consecutive segment lengths around a closed (or implicitly-
-    closed) ring of (lat, lon) points, in metres - same projection as
-    ring_area_m2, so it's consistent with the area this module already
-    computes rather than mixing in a separate spherical calculation.
-    Returns 0.0 for fewer than 2 points.
-    """
-    if len(points) < 2:
-        return 0.0
-    projected = _project(points)
-    total = 0.0
-    for (x1, y1), (x2, y2) in zip(projected, projected[1:] + projected[:1]):
-        total += math.hypot(x2 - x1, y2 - y1)
-    return total
-
-
 def ring_centroid(points):
     """Area-weighted centroid of a closed (or implicitly-closed) ring of
     (lat, lon) points - the standard polygon centroid formula, projected
-    the same way as ring_area_m2/ring_perimeter_m. Falls back to a simple
+    the same way as ring_area_m2. Falls back to a simple
     average of the points for degenerate rings (fewer than 3 points, or
     zero/near-zero area, e.g. a self-intersecting or sliver boundary)
     where the area-weighted formula divides by ~0.
@@ -130,40 +114,6 @@ def element_ring(el):
         return best_ring
 
     return []
-
-
-def nearest_ring_index(ring, lat, lon):
-    """Index into ring of its nearest vertex to (lat, lon) - same matching
-    logic as nearest_point_on_ring, but returning the vertex's position
-    within the ring rather than the point itself, so a walk around the ring
-    can continue on from here (see park_walks._park_loop_waypoints).
-    Returns None for an empty ring.
-    """
-    if not ring:
-        return None
-    lat_scale = 111_320
-    lon_scale = 111_320 * max(math.cos(math.radians(lat)), 0.01)
-    best_index = None
-    best_dist2 = None
-    for i, point in enumerate(ring):
-        dy = (point[0] - lat) * lat_scale
-        dx = (point[1] - lon) * lon_scale
-        dist2 = dx * dx + dy * dy
-        if best_dist2 is None or dist2 < best_dist2:
-            best_dist2 = dist2
-            best_index = i
-    return best_index
-
-
-def nearest_point_on_ring(ring, lat, lon):
-    """Nearest ring vertex to (lat, lon) - a proxy for "nearest park
-    entrance", since real OSM entrance/gate data isn't being fetched here.
-    Not GIS-grade (doesn't interpolate along edges, just picks the closest
-    existing vertex), consistent with this module's flat-earth approach
-    elsewhere. Returns None for an empty ring.
-    """
-    index = nearest_ring_index(ring, lat, lon)
-    return ring[index] if index is not None else None
 
 
 def element_area_m2(el):

@@ -40,6 +40,7 @@ longer default timeout below).
 """
 
 import json
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -51,6 +52,12 @@ from . import area
 MIRRORS = [
     "https://overpass.openstreetmap.fr/api/interpreter",
 ]
+
+# Greater London, in Overpass's (min_lat, min_lon, max_lat, max_lon) order -
+# converted from geocode._LONDON_VIEWBOX (Nominatim's left,top,right,bottom
+# lon/lat order), so a by-name park lookup (find_parks_by_name) is scoped to
+# London rather than searching the whole planet for a common park name.
+LONDON_BBOX = (51.28, -0.52, 51.70, 0.30)
 
 USER_AGENT = "BusExplorer/0.1 (https://github.com/Georege-Holloway/london-transport-routes)"
 
@@ -292,27 +299,29 @@ def fetch_areas(refs, timeout_s=30):
     return areas
 
 
-def find_parks_with_geometry(min_lat, min_lon, max_lat, max_lon, timeout_s=50):
-    """Query Overpass for park/garden/nature_reserve ways and relations in a
-    bounding box, with full boundary geometry - used by park_walks.py, which
-    needs each park's actual shape (area.ring_perimeter_m/ring_centroid/
-    element_ring) to size it and find a start/end point on its boundary, not
-    just a representative centre point the way find_candidates's normal
-    'out center tags' query returns.
+def find_parks_by_name(name, timeout_s=50):
+    """Query Overpass for park/garden/nature_reserve ways and relations
+    across Greater London whose name matches `name` exactly
+    (case-insensitive), with full boundary geometry - used by
+    park_walks.py's direct "enter a park's name" lookup. Returns the park's
+    actual shape (area.ring_centroid/element_ring) rather than just a
+    representative centre point the way find_candidates's normal 'out
+    center tags' query returns, since park_walks.py needs a point deep
+    inside the park to start a loop route from (see park_walks._park_loop_route).
 
-    Unlike fetch_areas (which fetches geometry for already-known refs),
-    this discovers parks directly from a bounding box - what Park Walks
-    needs, since it's starting from a place name, not an existing
-    candidate list.
+    name is regex-escaped before being embedded in the Overpass QL query
+    string, since it comes straight from user input and Overpass's
+    ["key"~"regex"] tag filter would otherwise let arbitrary regex (or
+    query-breaking quote characters) through.
 
-    Nodes are excluded - a park with no boundary mapped, just a single
-    point, has nothing to walk around and can't be sized. Returns a list of
-    raw elements (dicts with 'type', 'id', 'tags', and either 'geometry'
-    (way) or 'members' (relation)) - the same shape fetch_areas consumes,
-    unfiltered by _normalise_elements.
+    Returns a list of raw elements (dicts with 'type', 'id', 'tags', and
+    either 'geometry' (way) or 'members' (relation)), unfiltered by
+    _normalise_elements.
     """
+    min_lat, min_lon, max_lat, max_lon = LONDON_BBOX
     bbox = f"({min_lat},{min_lon},{max_lat},{max_lon})"
-    clause = '["leisure"~"^(park|garden|nature_reserve)$"]'
+    escaped = re.escape(name.strip()).replace('"', '\\"')
+    clause = f'["leisure"~"^(park|garden|nature_reserve)$"]["name"~"^{escaped}$",i]'
     body = f"way{clause}{bbox};\nrel{clause}{bbox};"
     # See _build_query for why the nonce comment is here.
     query = f"[out:json][timeout:{timeout_s}];\n// nonce:{uuid.uuid4()}\n({body}\n);\nout geom;"

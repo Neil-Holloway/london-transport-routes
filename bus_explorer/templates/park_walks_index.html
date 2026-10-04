@@ -3,7 +3,7 @@
 {% block content %}
 <div class="card center-form">
   <h1>Park Walks</h1>
-  <p class="hint">Enter a starting place to generate a walking loop through a nearby large park (joining to a second park if needed to reach the chosen distance)</p>
+  <p class="hint">Enter the name of a park to generate a walking loop within it</p>
 
   {% if error %}
     <p class="error">{{ error }}</p>
@@ -11,8 +11,8 @@
 
   <form method="post" action="{{ url_for('park_walks_search') }}">
     <label>
-      Starting from
-      <input type="text" name="place_name" placeholder="eg beckenham" required autofocus>
+      Park name
+      <input type="text" name="park_name" placeholder="eg Greenwich Park" required autofocus>
     </label>
 
     <label>

@@ -3,18 +3,14 @@ walking route, not the nearest-neighbour point-ordering walkplan.py already
 does for a list of attractions (see park_walks.py's module docstring for why
 a real routing engine was chosen over a dependency-free approximation).
 
-Two modes are used, both via ORS's foot-walking directions endpoint:
-  - round_trip_route: a loop of approximately length_m starting and ending
-    at the same point - used for "walk around this one park", via ORS's
-    options.round_trip (a single start point plus a target length is enough;
-    ORS does the route-finding). park_walks.py starts this from a park's
-    centroid rather than its boundary - see _park_loop_route there for why:
-    starting right at the edge let ORS's optimiser satisfy the requested
-    length entirely from the surrounding streets, without ever dipping into
-    the park at all.
-  - directions_route: an explicit ordered list of waypoints - used for
-    "walk from park A to park B", where the join between two parks is a
-    real point-to-point route, not a loop.
+round_trip_route generates a loop of approximately length_m starting and
+ending at the same point, via ORS's foot-walking directions endpoint's
+options.round_trip (a single start point plus a target length is enough;
+ORS does the route-finding). park_walks.py starts this from a park's
+centroid rather than its boundary - see _park_loop_route there for why:
+starting right at the edge let ORS's optimiser satisfy the requested length
+entirely from the surrounding streets, without ever dipping into the park
+at all.
 
 Requires ORS_API_KEY (a free account at openrouteservice.org gives 2000
 requests/day, 40/minute - ample for this app's traffic). Every request
@@ -111,15 +107,4 @@ def round_trip_route(lat, lon, length_m, seed=None, points=None):
         "coordinates": [[lon, lat]],
         "options": {"round_trip": round_trip},
     }
-    return _post(payload)
-
-
-def directions_route(waypoints):
-    """An explicit ordered route through waypoints: list of (lat, lon)
-    tuples, at least 2. Used to join two parks (or more) with a real
-    walking path between them, rather than a generated loop.
-    """
-    if len(waypoints) < 2:
-        raise RoutingError("directions_route needs at least 2 waypoints.")
-    payload = {"coordinates": [[lon, lat] for lat, lon in waypoints]}
     return _post(payload)
