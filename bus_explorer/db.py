@@ -113,6 +113,7 @@ def init_db():
                     start_lat DOUBLE PRECISION,
                     start_lon DOUBLE PRECISION,
                     route_geometry JSONB,
+                    instructions JSONB,
                     created_at TIMESTAMPTZ DEFAULT now(),
                     PRIMARY KEY (search_key, target_distance_m)
                 );
@@ -165,6 +166,18 @@ def init_db():
             # without affecting its visited/favourite/note state.
             if "ignored" not in visit_cols:
                 cur.execute("ALTER TABLE visits ADD COLUMN ignored INTEGER NOT NULL DEFAULT 0")
+
+            # Migration for park_walks rows created before step-by-step
+            # walking instructions were captured alongside the route geometry.
+            cur.execute(
+                """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'park_walks'
+                """
+            )
+            park_walk_cols = {row["column_name"] for row in cur.fetchall()}
+            if "instructions" not in park_walk_cols:
+                cur.execute("ALTER TABLE park_walks ADD COLUMN instructions JSONB")
 
 
 def _run(conn, sql, params):
@@ -496,17 +509,21 @@ def upsert_park_walk(row, conn=None):
         """
         INSERT INTO park_walks
             (search_key, target_distance_m, place_name, mode, park_names,
-             distance_m, duration_s, start_lat, start_lon, route_geometry)
+             distance_m, duration_s, start_lat, start_lon, route_geometry, instructions)
         VALUES
             (%(search_key)s, %(target_distance_m)s, %(place_name)s, %(mode)s, %(park_names)s,
-             %(distance_m)s, %(duration_s)s, %(start_lat)s, %(start_lon)s, %(route_geometry)s)
+             %(distance_m)s, %(duration_s)s, %(start_lat)s, %(start_lon)s, %(route_geometry)s, %(instructions)s)
         ON CONFLICT (search_key, target_distance_m) DO UPDATE SET
             place_name=excluded.place_name, mode=excluded.mode, park_names=excluded.park_names,
             distance_m=excluded.distance_m, duration_s=excluded.duration_s,
             start_lat=excluded.start_lat, start_lon=excluded.start_lon,
-            route_geometry=excluded.route_geometry
+            route_geometry=excluded.route_geometry, instructions=excluded.instructions
         """,
-        {**row, "route_geometry": psycopg2.extras.Json(row["route_geometry"])},
+        {
+            **row,
+            "route_geometry": psycopg2.extras.Json(row["route_geometry"]),
+            "instructions": psycopg2.extras.Json(row.get("instructions") or []),
+        },
     )
 
 

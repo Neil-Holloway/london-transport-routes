@@ -163,10 +163,29 @@ def _build_joined_route(park1, park2, target_distance_m):
     )
     # The return leg isn't routed separately - ORS's foot-walking paths are
     # assumed symmetric in each direction, so the outbound leg's distance/
-    # duration is just doubled rather than making a 4th API call.
+    # duration is just doubled rather than making a 4th API call. There are
+    # therefore no real turn-by-turn steps for it either - a single
+    # "retrace your steps" instruction stands in for it below, rather than
+    # presenting the outbound leg's steps a second time as if they were
+    # freshly computed for the return.
     distance_m = (loop1["distance_m"] or 0) + (loop2["distance_m"] or 0) + 2 * d_leg
     duration_s = (loop1["duration_s"] or 0) + (loop2["duration_s"] or 0) + 2 * (leg["duration_s"] or 0)
-    return {"coordinates": coordinates, "distance_m": distance_m, "duration_s": duration_s}
+    sections = [
+        {"label": f"Walk around {park1['name']}", "steps": loop1["instructions"]},
+        {"label": f"Walk to {park2['name']}", "steps": leg["instructions"]},
+        {"label": f"Walk around {park2['name']}", "steps": loop2["instructions"]},
+        {
+            "label": "Walk back to the start",
+            "steps": [
+                {
+                    "instruction": f"Retrace your steps back towards {park1['name']} and the start.",
+                    "distance_m": d_leg,
+                    "duration_s": leg["duration_s"],
+                }
+            ],
+        },
+    ]
+    return {"coordinates": coordinates, "distance_m": distance_m, "duration_s": duration_s, "sections": sections}
 
 
 def find_park_walk(place_name, target_distance_m, max_walk_to_park_m=DEFAULT_MAX_WALK_TO_PARK_M):
@@ -225,6 +244,12 @@ def find_park_walk(place_name, target_distance_m, max_walk_to_park_m=DEFAULT_MAX
             park1["entrance"][0], park1["entrance"][1], target_distance_m
         )
 
+    # _build_joined_route already returns its own multi-leg "sections";
+    # a single-park loop is just the one leg.
+    sections = route.get("sections") or [
+        {"label": f"Walk around {park1['name']}", "steps": route.get("instructions", [])}
+    ]
+
     search_key = _search_key(place_name)
     row = {
         "search_key": search_key,
@@ -237,6 +262,7 @@ def find_park_walk(place_name, target_distance_m, max_walk_to_park_m=DEFAULT_MAX
         "start_lat": origin_lat,
         "start_lon": origin_lon,
         "route_geometry": [[lat, lon] for lat, lon in route["coordinates"]],
+        "instructions": sections,
     }
     db.upsert_park_walk(row)
 

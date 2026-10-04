@@ -62,11 +62,31 @@ def _post(payload, timeout=25):
         raise RoutingError("ORS returned no route.")
     feature = features[0]
     coordinates = [(lat, lon) for lon, lat in feature["geometry"]["coordinates"]]
-    summary = feature.get("properties", {}).get("summary", {})
+    properties = feature.get("properties", {})
+    summary = properties.get("summary", {})
+
+    # ORS breaks a route into one or more "segments" (one per leg between
+    # consecutive waypoints), each with its own turn-by-turn "steps" - flatten
+    # every segment's steps into a single ordered list, since park_walks.py
+    # only ever passes this to the caller as one continuous leg of a walk
+    # (round_trip_route has one segment; directions_route's 2-waypoint calls
+    # here do too, but this doesn't assume that).
+    instructions = []
+    for segment in properties.get("segments") or []:
+        for step in segment.get("steps") or []:
+            instructions.append(
+                {
+                    "instruction": step.get("instruction"),
+                    "distance_m": step.get("distance"),
+                    "duration_s": step.get("duration"),
+                }
+            )
+
     return {
         "coordinates": coordinates,
         "distance_m": summary.get("distance"),
         "duration_s": summary.get("duration"),
+        "instructions": instructions,
     }
 
 

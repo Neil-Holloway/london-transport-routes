@@ -38,6 +38,25 @@
      data-start-lon="{{ walk.start_lon }}"
      data-route='{{ walk.route_geometry | tojson }}'></div>
 
+{% if walk.instructions %}
+<div class="card">
+  <h2>Walking directions</h2>
+  {% for section in walk.instructions %}
+  <h3>{{ section.label }}</h3>
+  <ol class="walk-plan-list">
+    {% for step in section.steps %}
+    <li>
+      {{ step.instruction }}
+      {% if step.distance_m %}
+      <span class="hint">({{ (step.distance_m) | round | int }} m{% if step.duration_s %}, {{ (step.duration_s / 60) | round | int }} min{% endif %})</span>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+  {% endfor %}
+</div>
+{% endif %}
+
 <form method="post" action="{{ url_for('park_walks_search') }}" class="inline-form">
   <input type="hidden" name="place_name" value="{{ walk.place_name }}">
   <input type="hidden" name="target_distance_m" value="{{ walk.target_distance_m }}">
