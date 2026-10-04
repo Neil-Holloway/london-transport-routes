@@ -38,6 +38,13 @@
      data-start-lon="{{ walk.start_lon }}"
      data-route='{{ walk.route_geometry | tojson }}'></div>
 
+<form method="post" action="{{ url_for('park_walks_search') }}" class="inline-form">
+  <input type="hidden" name="place_name" value="{{ walk.place_name }}">
+  <input type="hidden" name="target_distance_m" value="{{ walk.target_distance_m }}">
+  <input type="hidden" name="force" value="1">
+  <button type="submit">Regenerate this route</button>
+</form>
+
 <p class="hint"><a href="{{ url_for('park_walks_index') }}">Start a new Park Walk</a></p>
 {% endblock %}
 

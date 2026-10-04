@@ -447,6 +447,7 @@ def park_walks_index():
 def park_walks_search():
     place_name = request.form.get("place_name", "").strip()
     target_distance_m = int(request.form.get("target_distance_m", TARGET_DISTANCES_M[0]))
+    force = request.form.get("force") == "1"
 
     if not place_name:
         return render_template(
@@ -455,7 +456,7 @@ def park_walks_search():
         )
 
     search_key = _park_walk_search_key(place_name)
-    cached = db.get_park_walk(search_key, target_distance_m)
+    cached = None if force else db.get_park_walk(search_key, target_distance_m)
 
     if cached is None:
         try:
