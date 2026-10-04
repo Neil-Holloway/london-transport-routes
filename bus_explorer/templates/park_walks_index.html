@@ -15,17 +15,8 @@
       <input type="text" name="park_name" placeholder="eg Greenwich Park" required autofocus>
     </label>
 
-    <label>
-      Walk distance
-      <select name="target_distance_m">
-        {% for d in target_distances %}
-        <option value="{{ d }}" {{ 'selected' if d == 5000 }}>{{ (d / 1000) | round | int }} km</option>
-        {% endfor %}
-      </select>
-    </label>
-
     <button type="submit">Generate a walk</button>
   </form>
-  <p class="hint">Generating a route can take up to a minute the first time a place/distance combination is searched.</p>
+  <p class="hint">Generating a route can take up to a minute the first time a park is searched.</p>
 </div>
 {% endblock %}

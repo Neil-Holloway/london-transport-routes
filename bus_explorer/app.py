@@ -14,8 +14,7 @@ from .car_explorer import _search_key as _car_search_key
 from .car_explorer import find_by_car
 from .categorise import CATEGORIES
 from .categorise_activity import CATEGORIES as ACTIVITY_CATEGORIES
-from .park_walks import ParkNotFoundError
-from .park_walks import TARGET_DISTANCES_M, find_park_walk
+from .park_walks import ParkNotFoundError, find_park_walk
 from .park_walks import _search_key as _park_walk_search_key
 from .pipeline import explore_route
 from .tfl_client import RouteNotFoundError
@@ -440,53 +439,41 @@ def train_results(search_key):
 
 @app.route("/park-walks")
 def park_walks_index():
-    return render_template("park_walks_index.html", target_distances=TARGET_DISTANCES_M)
+    return render_template("park_walks_index.html")
 
 
 @app.route("/park-walks/search", methods=["POST"])
 def park_walks_search():
     park_name = request.form.get("park_name", "").strip()
-    target_distance_m = int(request.form.get("target_distance_m", TARGET_DISTANCES_M[0]))
     force = request.form.get("force") == "1"
 
     if not park_name:
-        return render_template(
-            "park_walks_index.html", target_distances=TARGET_DISTANCES_M,
-            error="Please enter a park name.",
-        )
+        return render_template("park_walks_index.html", error="Please enter a park name.")
 
     search_key = _park_walk_search_key(park_name)
-    cached = None if force else db.get_park_walk(search_key, target_distance_m)
+    cached = None if force else db.get_park_walk(search_key)
 
     if cached is None:
         try:
-            find_park_walk(park_name, target_distance_m)
+            find_park_walk(park_name)
         except ParkNotFoundError as e:
-            return render_template(
-                "park_walks_index.html", target_distances=TARGET_DISTANCES_M, error=str(e)
-            )
+            return render_template("park_walks_index.html", error=str(e))
         except RuntimeError as e:
             return render_template(
                 "park_walks_index.html",
-                target_distances=TARGET_DISTANCES_M,
                 error=f"Could not generate a route right now ({e}). Please try again shortly.",
             )
 
-    return redirect(url_for("park_walks_results", search_key=search_key, distance=target_distance_m))
+    return redirect(url_for("park_walks_results", search_key=search_key))
 
 
 @app.route("/park-walks/<search_key>")
 def park_walks_results(search_key):
-    target_distance_m = request.args.get("distance", type=int) or TARGET_DISTANCES_M[0]
-    walk = db.get_park_walk(search_key, target_distance_m)
+    walk = db.get_park_walk(search_key)
     if not walk:
         return redirect(url_for("park_walks_index"))
 
-    return render_template(
-        "park_walks_results.html",
-        walk=walk,
-        target_distances=TARGET_DISTANCES_M,
-    )
+    return render_template("park_walks_results.html", walk=walk)
 
 
 @app.route("/attraction/<path:attraction_id>")

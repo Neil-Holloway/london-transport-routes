@@ -57,6 +57,25 @@ def ring_area_m2(points):
     return abs(total) / 2
 
 
+def ring_perimeter_m(points):
+    """Sum of consecutive segment lengths around a closed (or implicitly-
+    closed) ring of (lat, lon) points, in metres - same projection as
+    ring_area_m2, so it's consistent with the area this module already
+    computes rather than mixing in a separate spherical calculation. Used
+    by park_walks.py as a natural, park-specific starting point for how
+    long a loop through it should be (see park_walks._candidate_loop_lengths_m),
+    now that Park Walks no longer asks the user for a target distance.
+    Returns 0.0 for fewer than 2 points.
+    """
+    if len(points) < 2:
+        return 0.0
+    projected = _project(points)
+    total = 0.0
+    for (x1, y1), (x2, y2) in zip(projected, projected[1:] + projected[:1]):
+        total += math.hypot(x2 - x1, y2 - y1)
+    return total
+
+
 def ring_centroid(points):
     """Area-weighted centroid of a closed (or implicitly-closed) ring of
     (lat, lon) points - the standard polygon centroid formula, projected
