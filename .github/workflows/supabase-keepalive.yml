@@ -20,4 +20,6 @@ jobs:
       - name: Ping database
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: psql "$DATABASE_URL" -c "SELECT 1;"
+        run: |
+          echo "DATABASE_URL length: ${#DATABASE_URL}"
+          psql "$DATABASE_URL" -c "SELECT 1;"
