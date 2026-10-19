@@ -535,7 +535,22 @@ def _map_bbox(lat, lon, area_m2):
 @app.route("/open-spaces")
 def open_spaces():
     show_deleted = request.args.get("show_deleted", "0") == "1"
-    spaces = db.get_open_spaces(g.visitor_name, include_deleted=show_deleted)
+
+    # Always fetched including deleted, so the summary counts below (e.g.
+    # "Deleted") stay accurate regardless of the show_deleted filter applied
+    # to the listing itself.
+    all_spaces = db.get_open_spaces(g.visitor_name, include_deleted=True)
+    counts = {
+        "total": len(all_spaces),
+        "parkrun": sum(1 for s in all_spaces if s["parkrun_matched"]),
+        "london_loop": sum(1 for s in all_spaces if "London Loop" in (s["trails_matched"] or "")),
+        "capital_ring": sum(1 for s in all_spaces if "Capital Ring" in (s["trails_matched"] or "")),
+        "thames_path": sum(1 for s in all_spaces if "Thames Path" in (s["trails_matched"] or "")),
+        "visited": sum(1 for s in all_spaces if s["visited"]),
+        "deleted": sum(1 for s in all_spaces if s["deleted"]),
+    }
+
+    spaces = all_spaces if show_deleted else [s for s in all_spaces if not s["deleted"]]
     for space in spaces:
         space["map_bbox"] = _map_bbox(space["lat"], space["lon"], space["area_m2"])
     boroughs = []
@@ -545,7 +560,7 @@ def open_spaces():
             boroughs.append((name, []))
         boroughs[-1][1].append(space)
     return render_template(
-        "open_spaces.html", boroughs=boroughs, total=len(spaces), show_deleted=show_deleted
+        "open_spaces.html", boroughs=boroughs, total=len(spaces), counts=counts, show_deleted=show_deleted
     )
 
 
