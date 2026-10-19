@@ -34,7 +34,7 @@ import time
 import urllib.request
 from datetime import date, timedelta
 
-from bus_explorer import area, borough, db, overpass_client, tfl_client
+from bus_explorer import area, borough, db, geocode, overpass_client, tfl_client
 from bus_explorer.area_filter import MIN_AREA_M2, filter_by_area
 
 # Covers Greater London with some margin - wide enough that no part of the
@@ -59,6 +59,7 @@ USER_AGENT = "Mozilla/5.0 (compatible; BusExplorer open-spaces builder)"
 BECKENHAM_ORIGIN = (51.411175, -0.026016)
 JOURNEY_TIME = "0800"
 JOURNEY_REQUEST_PAUSE_S = 0.3  # be polite to TfL's anonymous rate limit
+NOMINATIM_REQUEST_PAUSE_S = 1.1  # Nominatim's usage policy caps anonymous use at 1 req/s
 
 
 def _next_saturday():
@@ -284,12 +285,15 @@ def match_journeys(records, journey_date):
             # The destination passed to plan_journey is always the park's own
             # raw coordinates (never a named TfL place), so the final leg's
             # instruction is always "Walk to <reverse-geocoded street
-            # address>" - a street address with no postcode, since TfL has no
-            # real place to label there. Swap it for the park's own name,
-            # which is both more accurate and more useful than an
-            # incomplete address.
+            # address>" with no postcode - TfL's own reverse geocoder doesn't
+            # return one for an arbitrary coordinate. Swap it for a proper
+            # reverse geocode (via geocode.reverse_geocode, the same
+            # Nominatim-based helper attractions use for their addresses),
+            # which does include the postcode.
             if descriptions and legs[-1]["mode"] == "walking":
-                descriptions[-1] = f"Walk to {r['name']}"
+                address = geocode.reverse_geocode(r["lat"], r["lon"])
+                descriptions[-1] = f"Walk to {address or r['name']}"
+                time.sleep(NOMINATIM_REQUEST_PAUSE_S)
             r["journey_summary"] = " \u2192 ".join(descriptions)
         else:
             r["journey_minutes"] = None
