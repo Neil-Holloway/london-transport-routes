@@ -547,7 +547,12 @@ def open_spaces():
         "capital_ring": sum(1 for s in all_spaces if "Capital Ring" in (s["trails_matched"] or "")),
         "thames_path": sum(1 for s in all_spaces if "Thames Path" in (s["trails_matched"] or "")),
         "visited": sum(1 for s in all_spaces if s["visited"]),
-        "not_visited": sum(1 for s in all_spaces if not s["visited"]),
+        # "Not visited" means not visited by any means - parkrun, trail, or
+        # marked visited independently - not just "the red tick isn't set",
+        # since a park you've run a parkrun at (say) has still been visited.
+        "not_visited": sum(
+            1 for s in all_spaces if not (s["parkrun_matched"] or s["trail_matched"] or s["visited"])
+        ),
         "deleted": sum(1 for s in all_spaces if s["deleted"]),
     }
 
