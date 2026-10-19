@@ -277,9 +277,20 @@ def match_journeys(records, journey_date):
         )
         if result:
             r["journey_minutes"] = result["duration_minutes"]
-            r["journey_summary"] = " \u2192 ".join(
-                leg["instruction"] or leg["mode"].replace("-", " ").title() for leg in result["legs"]
-            )
+            legs = result["legs"]
+            descriptions = [
+                leg["instruction"] or leg["mode"].replace("-", " ").title() for leg in legs
+            ]
+            # The destination passed to plan_journey is always the park's own
+            # raw coordinates (never a named TfL place), so the final leg's
+            # instruction is always "Walk to <reverse-geocoded street
+            # address>" - a street address with no postcode, since TfL has no
+            # real place to label there. Swap it for the park's own name,
+            # which is both more accurate and more useful than an
+            # incomplete address.
+            if descriptions and legs[-1]["mode"] == "walking":
+                descriptions[-1] = f"Walk to {r['name']}"
+            r["journey_summary"] = " \u2192 ".join(descriptions)
         else:
             r["journey_minutes"] = None
             r["journey_summary"] = None
