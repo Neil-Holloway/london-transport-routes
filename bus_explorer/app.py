@@ -5,6 +5,8 @@ Run with:
     python3 -m bus_explorer.app
 """
 
+import math
+
 from flask import Flask, g, make_response, redirect, render_template, request, url_for
 
 from . import db, geocode, tfl_client
@@ -517,16 +519,34 @@ def my_visits():
     )
 
 
+def _map_bbox(lat, lon, area_m2):
+    """A bounding box around (lat, lon), sized to roughly fit the park
+    (bigger parks get a wider view), for the on-the-fly OpenStreetMap embed
+    - see open_spaces.html's Map toggle. No boundary geometry is stored for
+    open spaces (only the centre point - see build_open_spaces.py), so this
+    is just a sensible viewport, not an exact fit to the park's edges.
+    """
+    half_extent_m = max(400, (area_m2 ** 0.5) * 0.75)
+    lat_margin = half_extent_m / 111_320
+    lon_margin = half_extent_m / (111_320 * math.cos(math.radians(lat)))
+    return f"{lon - lon_margin},{lat - lat_margin},{lon + lon_margin},{lat + lat_margin}"
+
+
 @app.route("/open-spaces")
 def open_spaces():
-    spaces = db.get_open_spaces(g.visitor_name)
+    show_deleted = request.args.get("show_deleted", "0") == "1"
+    spaces = db.get_open_spaces(g.visitor_name, include_deleted=show_deleted)
+    for space in spaces:
+        space["map_bbox"] = _map_bbox(space["lat"], space["lon"], space["area_m2"])
     boroughs = []
     for space in spaces:
         name = space["borough"] or "Unassigned"
         if not boroughs or boroughs[-1][0] != name:
             boroughs.append((name, []))
         boroughs[-1][1].append(space)
-    return render_template("open_spaces.html", boroughs=boroughs, total=len(spaces))
+    return render_template(
+        "open_spaces.html", boroughs=boroughs, total=len(spaces), show_deleted=show_deleted
+    )
 
 
 @app.route("/open-space/<path:open_space_id>/toggle-visited", methods=["POST"])
@@ -536,6 +556,19 @@ def toggle_open_space_visited(open_space_id):
     """
     visited = request.form.get("visited") == "1"
     db.set_open_space_visited(open_space_id, g.visitor_name, visited)
+
+    return_to = request.form.get("return_to") or url_for("open_spaces")
+    return redirect(return_to)
+
+
+@app.route("/open-space/<path:open_space_id>/toggle-deleted", methods=["POST"])
+def toggle_open_space_deleted(open_space_id):
+    """Deletes (or restores) an open space from this visitor's own list -
+    see db.set_open_space_deleted for why this is a per-visitor hide rather
+    than a real row delete.
+    """
+    deleted = request.form.get("deleted") == "1"
+    db.set_open_space_deleted(open_space_id, g.visitor_name, deleted)
 
     return_to = request.form.get("return_to") or url_for("open_spaces")
     return redirect(return_to)

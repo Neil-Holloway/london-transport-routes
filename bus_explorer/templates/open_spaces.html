@@ -8,7 +8,15 @@
   <span class="tick tick-trail">●</span> London Loop / Capital Ring / Thames Path &middot;
   <span class="tick tick-visited">●</span> visited independently
 </p>
+<p class="hint">
+  {% if show_deleted %}
+    <a href="{{ url_for('open_spaces') }}">Hide deleted</a>
+  {% else %}
+    <a href="{{ url_for('open_spaces', show_deleted=1) }}">Show deleted</a>
+  {% endif %}
+</p>
 
+{% set return_to = url_for('open_spaces', show_deleted=(1 if show_deleted else none)) %}
 {% for borough_name, spaces in boroughs %}
 <h2>{{ borough_name }}</h2>
 <div class="result-list">
@@ -19,21 +27,36 @@
       {% if s.parkrun_matched %}<span class="tick tick-parkrun" title="You've run {{ s.parkrun_name }} parkrun here">●</span>{% endif %}
       {% if s.trail_matched %}<span class="tick tick-trail" title="{{ s.trails_matched }}">●</span>{% endif %}
       {% if s.visited %}<span class="tick tick-visited" title="Visited independently">●</span>{% endif %}
+      {% if s.deleted %}<span class="ignored-tag">Deleted</span>{% endif %}
     </h3>
     <div class="meta">{{ "%.1f"|format(s.area_m2 / 10000) }} ha</div>
     {% if s.parkrun_matched %}<div class="meta">parkrun: {{ s.parkrun_name }}</div>{% endif %}
     {% if s.trail_matched %}<div class="meta">Trail: {{ s.trails_matched }}</div>{% endif %}
     {% if s.journey_minutes %}<div class="meta">From Beckenham, Sat 8am: {{ s.journey_minutes }} min &middot; {{ s.journey_summary }}</div>{% endif %}
-    <form method="post" action="{{ url_for('toggle_open_space_visited', open_space_id=s.id) }}" class="inline-form">
-      <input type="hidden" name="return_to" value="{{ url_for('open_spaces') }}#{{ s.id }}">
-      {% if s.visited %}
-        <input type="hidden" name="visited" value="0">
-        <button type="submit">✓ Visited independently (undo)</button>
-      {% else %}
-        <input type="hidden" name="visited" value="1">
-        <button type="submit">Mark visited independently</button>
-      {% endif %}
-    </form>
+    <div class="status">
+      <form method="post" action="{{ url_for('toggle_open_space_visited', open_space_id=s.id) }}" class="inline-form">
+        <input type="hidden" name="return_to" value="{{ return_to }}#{{ s.id }}">
+        {% if s.visited %}
+          <input type="hidden" name="visited" value="0">
+          <button type="submit">✓ Visited independently (undo)</button>
+        {% else %}
+          <input type="hidden" name="visited" value="1">
+          <button type="submit">Mark visited independently</button>
+        {% endif %}
+      </form>
+      <form method="post" action="{{ url_for('toggle_open_space_deleted', open_space_id=s.id) }}" class="inline-form">
+        <input type="hidden" name="return_to" value="{{ return_to }}#{{ s.id }}">
+        {% if s.deleted %}
+          <input type="hidden" name="deleted" value="0">
+          <button type="submit">Restore</button>
+        {% else %}
+          <input type="hidden" name="deleted" value="1">
+          <button type="submit" onclick="return confirm('Delete {{ s.name }} from your list?')">Delete</button>
+        {% endif %}
+      </form>
+      <button type="button" class="map-toggle" onclick="toggleOpenSpaceMap('{{ s.id }}', {{ s.lat }}, {{ s.lon }}, '{{ s.map_bbox }}')">Map</button>
+    </div>
+    <div id="map-{{ s.id }}" class="map-container"></div>
   </div>
   {% endfor %}
 </div>
@@ -48,5 +71,25 @@
   .tick-parkrun { color: #2e8b2e; }
   .tick-trail { color: #1a6fd1; }
   .tick-visited { color: #c0392b; }
+  .map-container { display: none; margin-top: 0.5rem; }
+  .map-container iframe { width: 100%; height: 300px; border: 0; }
 </style>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+  // Loads the OpenStreetMap embed only on first click (not for every card
+  // up front - 400+ live iframes at once would be far too heavy), then
+  // just shows/hides it on subsequent clicks.
+  function toggleOpenSpaceMap(id, lat, lon, bbox) {
+    var container = document.getElementById('map-' + id);
+    if (!container.dataset.loaded) {
+      var iframe = document.createElement('iframe');
+      iframe.src = 'https://www.openstreetmap.org/export/embed.html?bbox=' + bbox + '&layer=mapnik&marker=' + lat + ',' + lon;
+      container.appendChild(iframe);
+      container.dataset.loaded = '1';
+    }
+    container.style.display = container.style.display === 'block' ? 'none' : 'block';
+  }
+</script>
 {% endblock %}

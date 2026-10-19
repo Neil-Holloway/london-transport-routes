@@ -141,6 +141,7 @@ def init_db():
                     open_space_id TEXT NOT NULL,
                     visitor_name TEXT NOT NULL,
                     visited INTEGER NOT NULL DEFAULT 0,
+                    deleted INTEGER NOT NULL DEFAULT 0,
                     updated_at TIMESTAMPTZ DEFAULT now(),
                     PRIMARY KEY (open_space_id, visitor_name)
                 );
@@ -199,6 +200,19 @@ def init_db():
                 cur.execute("ALTER TABLE open_spaces ADD COLUMN journey_minutes INTEGER")
             if "journey_summary" not in open_space_cols:
                 cur.execute("ALTER TABLE open_spaces ADD COLUMN journey_summary TEXT")
+
+            # Migration for databases created before "delete this open
+            # space" existed - per-visitor, like visited, since open_spaces
+            # itself is wholesale rebuilt by build_open_spaces.py.
+            cur.execute(
+                """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'open_space_visits'
+                """
+            )
+            open_space_visit_cols = {row["column_name"] for row in cur.fetchall()}
+            if "deleted" not in open_space_visit_cols:
+                cur.execute("ALTER TABLE open_space_visits ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0")
 
 
 def _run(conn, sql, params):
@@ -778,18 +792,18 @@ def bulk_replace_open_spaces(rows):
                 )
 
 
-def get_open_spaces(visitor_name):
+def get_open_spaces(visitor_name, include_deleted=False):
+    query = """
+        SELECT o.*, COALESCE(v.visited, 0) AS visited, COALESCE(v.deleted, 0) AS deleted
+        FROM open_spaces o
+        LEFT JOIN open_space_visits v ON v.open_space_id = o.id AND v.visitor_name = %s
+    """
+    if not include_deleted:
+        query += " WHERE COALESCE(v.deleted, 0) = 0"
+    query += " ORDER BY o.borough, o.name"
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT o.*, COALESCE(v.visited, 0) AS visited
-                FROM open_spaces o
-                LEFT JOIN open_space_visits v ON v.open_space_id = o.id AND v.visitor_name = %s
-                ORDER BY o.borough, o.name
-                """,
-                (visitor_name,),
-            )
+            cur.execute(query, (visitor_name,))
             return [dict(r) for r in cur.fetchall()]
 
 
@@ -808,6 +822,26 @@ def set_open_space_visited(open_space_id, visitor_name, visited):
                     visited=excluded.visited, updated_at=excluded.updated_at
                 """,
                 (open_space_id, visitor_name, int(visited)),
+            )
+
+
+def set_open_space_deleted(open_space_id, visitor_name, deleted):
+    """Marks (or unmarks) an open space as deleted from this visitor's own
+    list - a per-visitor hide rather than a real delete, since open_spaces
+    itself is wholesale truncated and reinserted by build_open_spaces.py on
+    every run (see open_space_visits' own comment in init_db). Same
+    partial-upsert pattern as set_open_space_visited above.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO open_space_visits (open_space_id, visitor_name, deleted, updated_at)
+                VALUES (%s, %s, %s, now())
+                ON CONFLICT (open_space_id, visitor_name) DO UPDATE SET
+                    deleted=excluded.deleted, updated_at=excluded.updated_at
+                """,
+                (open_space_id, visitor_name, int(deleted)),
             )
 
 
