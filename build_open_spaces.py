@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Builds the Open Spaces report: every public open space (park/garden/nature
-reserve) over 10 hectares in Greater London, with a borough assignment,
+reserve/wood) over 10 hectares in Greater London, with a borough assignment,
 whether it's a parkrun venue Neil has personally run (parkrun_matched),
 and whether the London Loop / Capital Ring / Thames Path passes through or
 near it (trail_matched). Writes the result to the open_spaces table (see
@@ -56,7 +56,14 @@ def fetch_url(url):
 
 def fetch_candidate_parks():
     min_lat, min_lon, max_lat, max_lon = GREATER_LONDON_BBOX
-    clauses = ['["leisure"~"^(park|garden|nature_reserve)$"]']
+    # natural=wood: a lot of named London woods (e.g. Hoblingwell Wood,
+    # Elmstead Wood) are never tagged leisure=park/garden/nature_reserve at
+    # all, so they'd be invisible without this second clause - see
+    # area_filter.is_park_candidate, which recognises natural=wood too.
+    clauses = [
+        '["leisure"~"^(park|garden|nature_reserve)$"]',
+        '["natural"="wood"]',
+    ]
     # include_relations: some open spaces (e.g. Mitcham Common - several
     # disjoint pieces of common land under one name) are mapped as a
     # multipolygon relation rather than a single way, which the default

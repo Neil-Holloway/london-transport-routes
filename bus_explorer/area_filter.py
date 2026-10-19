@@ -1,15 +1,22 @@
 """Size and public-accessibility filter for 'park' candidates (OSM
-leisure=park/garden/nature_reserve) - see docs/what-can-i-do-spec.md
-section 10, and the discussion that replaced it: rather than a dedicated
-Parks search with its own access-tag filtering and an 'out geom'
-candidate query baked into the main pipeline, every named park/garden/
-nature_reserve the normal explore / what-can-i-do searches already find
-is filtered down to only those that are (a) over MIN_AREA_M2 and (b)
-plausibly open to the public - a single extra, targeted Overpass
-geometry query for just the surviving candidates, run after the normal
-candidate search rather than replacing it. This is what keeps the parks
-category from being a huge list of every named pocket garden (or private
-grounds that happen to be tagged leisure=garden).
+leisure=park/garden/nature_reserve, plus natural=wood) - see
+docs/what-can-i-do-spec.md section 10, and the discussion that replaced
+it: rather than a dedicated Parks search with its own access-tag
+filtering and an 'out geom' candidate query baked into the main
+pipeline, every named park/garden/nature_reserve/wood the normal
+explore / what-can-i-do searches already find is filtered down to only
+those that are (a) over MIN_AREA_M2 and (b) plausibly open to the public
+- a single extra, targeted Overpass geometry query for just the
+surviving candidates, run after the normal candidate search rather than
+replacing it. This is what keeps the parks category from being a huge
+list of every named pocket garden (or private grounds that happen to be
+tagged leisure=garden).
+
+natural=wood is recognised here for build_open_spaces.py's benefit
+(Overpass's own candidate query only asks for it there - see
+build_open_spaces.fetch_candidate_parks - so this never actually
+surfaces wood candidates in the other, unrelated callers of
+filter_by_area below: Explore, By Car, By Train, What Can I Do).
 """
 
 from . import area, overpass_client
@@ -17,7 +24,14 @@ from . import area, overpass_client
 MIN_AREA_M2 = 100_000  # 10 hectares
 
 _PARK_LEISURE_VALUES = {"park", "garden", "nature_reserve"}
-_DEFAULT_PUBLIC_LEISURE_VALUES = {"park", "garden"}
+# Nature reserves used to default to NOT publicly accessible when
+# untagged, on the theory that they restrict access more often than
+# parks/gardens without bothering to tag it. In practice this produced
+# false negatives for well-known, free, open country parks/reserves
+# (e.g. High Elms) - genuinely restricted reserves are the rare case and
+# tend to tag access=private/permit explicitly, so nature_reserve now
+# gets the same public-by-default treatment as park/garden.
+_DEFAULT_PUBLIC_LEISURE_VALUES = {"park", "garden", "nature_reserve"}
 
 # access values that explicitly settle the question either way.
 _PRIVATE_ACCESS_VALUES = {"private", "no", "permit"}
@@ -25,21 +39,22 @@ _PUBLIC_ACCESS_VALUES = {"yes", "public"}
 
 
 def is_park_candidate(tags):
-    return tags.get("leisure") in _PARK_LEISURE_VALUES
+    return tags.get("leisure") in _PARK_LEISURE_VALUES or tags.get("natural") == "wood"
 
 
 def _is_publicly_accessible(tags):
     """access=private/no/permit is always excluded, access=yes/public is
-    always included. Untagged defaults to public for parks/gardens (the
-    standard OSM convention), but not for nature reserves, which more
-    often restrict access without bothering to tag it.
+    always included. Untagged defaults to public for parks/gardens/
+    nature_reserves and woods (the standard OSM convention for green
+    space generally - see _DEFAULT_PUBLIC_LEISURE_VALUES above for why
+    nature_reserve was moved into this default-public bucket).
     """
     access = tags.get("access")
     if access in _PRIVATE_ACCESS_VALUES:
         return False
     if access in _PUBLIC_ACCESS_VALUES:
         return True
-    return tags.get("leisure") in _DEFAULT_PUBLIC_LEISURE_VALUES
+    return tags.get("leisure") in _DEFAULT_PUBLIC_LEISURE_VALUES or tags.get("natural") == "wood"
 
 
 def _is_sports_or_school_land(tags):
