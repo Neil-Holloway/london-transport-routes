@@ -13,7 +13,7 @@
 <h2>{{ borough_name }}</h2>
 <div class="result-list">
   {% for s in spaces %}
-  <div class="card result">
+  <div class="card result" id="{{ s.id }}">
     <h3>
       {{ s.name }}
       {% if s.parkrun_matched %}<span class="tick tick-parkrun" title="You've run {{ s.parkrun_name }} parkrun here">●</span>{% endif %}
@@ -24,7 +24,7 @@
     {% if s.parkrun_matched %}<div class="meta">parkrun: {{ s.parkrun_name }}</div>{% endif %}
     {% if s.trail_matched %}<div class="meta">Trail: {{ s.trails_matched }}</div>{% endif %}
     <form method="post" action="{{ url_for('toggle_open_space_visited', open_space_id=s.id) }}" class="inline-form">
-      <input type="hidden" name="return_to" value="{{ request.full_path }}">
+      <input type="hidden" name="return_to" value="{{ url_for('open_spaces') }}#{{ s.id }}">
       {% if s.visited %}
         <input type="hidden" name="visited" value="0">
         <button type="submit">✓ Visited independently (undo)</button>
