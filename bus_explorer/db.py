@@ -659,7 +659,7 @@ def set_note_favourite(attraction_id, visitor_name, note, favourite):
 
 def get_all_visits(visitor_name, category=None, favourites_only=False, line_id=None):
     query = """
-        SELECT DISTINCT a.*, v.visited, v.date_visited, v.note, v.favourite
+        SELECT DISTINCT a.*, v.visited, v.date_visited, v.note, v.favourite, v.updated_at
         FROM attractions a
         JOIN visits v ON v.attraction_id = a.id
     """
