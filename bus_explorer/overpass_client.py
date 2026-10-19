@@ -109,12 +109,23 @@ ACTIVITY_QUERY_CLAUSES = [
 ]
 
 
-def _build_query(min_lat, min_lon, max_lat, max_lon, clauses, timeout_s=50):
+def _build_query(min_lat, min_lon, max_lat, max_lon, clauses, timeout_s=50, include_relations=False):
     bbox = f"({min_lat},{min_lon},{max_lat},{max_lon})"
     parts = []
     for clause in clauses:
         parts.append(f"node{clause}{bbox};")
         parts.append(f"way{clause}{bbox};")
+        if include_relations:
+            # Scoped opt-in, not a default for every caller of this shared
+            # query builder: a scattered/non-contiguous area (e.g. Mitcham
+            # Common) is mapped in OSM as a multipolygon relation rather
+            # than a single way, so a way/node-only query silently misses
+            # it. Only build_open_spaces.py's leisure clause asks for this
+            # so far - turning it on generally risks pulling in unrelated
+            # relations (bus routes, admin boundaries, building complexes)
+            # for every other search category, and possible duplicates
+            # where a relation and one of its own member ways both match.
+            parts.append(f"relation{clause}{bbox};")
     body = "\n".join(parts)
     # The nonce comment keeps a retried query from being byte-for-byte
     # identical to the previous attempt - some mirrors (e.g. overpass.osm.ch)
@@ -204,7 +215,7 @@ def _execute(query, rounds=1, timeout=25, normalise=True):
     raise RuntimeError(f"Overpass query failed on all mirrors: {last_error}")
 
 
-def find_candidates(min_lat, min_lon, max_lat, max_lon, retries_per_mirror=1, clauses=None, timeout_s=50):
+def find_candidates(min_lat, min_lon, max_lat, max_lon, retries_per_mirror=1, clauses=None, timeout_s=50, include_relations=False):
     """Query Overpass for candidate POIs in a bounding box.
 
     clauses defaults to INTERESTING_QUERY_CLAUSES (Bus Explorer's heritage
@@ -215,9 +226,14 @@ def find_candidates(min_lat, min_lon, max_lat, max_lon, retries_per_mirror=1, cl
     still genuinely computing isn't abandoned before the server's own
     timeout would even fire.
 
+    include_relations: see _build_query - off by default, opt in per caller.
+
     Returns a list of dicts: {id, type, lat, lon, tags}.
     """
-    query = _build_query(min_lat, min_lon, max_lat, max_lon, clauses or INTERESTING_QUERY_CLAUSES, timeout_s=timeout_s)
+    query = _build_query(
+        min_lat, min_lon, max_lat, max_lon, clauses or INTERESTING_QUERY_CLAUSES,
+        timeout_s=timeout_s, include_relations=include_relations,
+    )
     return _execute(query, rounds=retries_per_mirror, timeout=timeout_s + 15)
 
 

@@ -57,8 +57,12 @@ def fetch_url(url):
 def fetch_candidate_parks():
     min_lat, min_lon, max_lat, max_lon = GREATER_LONDON_BBOX
     clauses = ['["leisure"~"^(park|garden|nature_reserve)$"]']
+    # include_relations: some open spaces (e.g. Mitcham Common - several
+    # disjoint pieces of common land under one name) are mapped as a
+    # multipolygon relation rather than a single way, which the default
+    # node/way-only query misses entirely - see overpass_client._build_query.
     return overpass_client.find_candidates(
-        min_lat, min_lon, max_lat, max_lon, clauses=clauses, timeout_s=180
+        min_lat, min_lon, max_lat, max_lon, clauses=clauses, timeout_s=180, include_relations=True
     )
 
 
