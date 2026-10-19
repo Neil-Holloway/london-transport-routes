@@ -129,6 +129,19 @@ def init_db():
                     trails_matched TEXT,
                     updated_at TIMESTAMPTZ DEFAULT now()
                 );
+
+                -- No FK to open_spaces.id: that table is wholesale truncated
+                -- and reinserted by build_open_spaces.py on every run, and a
+                -- visitor's "visited independently" marks must survive that
+                -- rebuild (ids are stable - 'osm:<type>:<id> - so a stale row
+                -- here just re-attaches to the same park next run).
+                CREATE TABLE IF NOT EXISTS open_space_visits (
+                    open_space_id TEXT NOT NULL,
+                    visitor_name TEXT NOT NULL,
+                    visited INTEGER NOT NULL DEFAULT 0,
+                    updated_at TIMESTAMPTZ DEFAULT now(),
+                    PRIMARY KEY (open_space_id, visitor_name)
+                );
                 """
             )
             # Migration for databases created before the 'address' column existed.
@@ -747,11 +760,37 @@ def bulk_replace_open_spaces(rows):
                 )
 
 
-def get_open_spaces():
+def get_open_spaces(visitor_name):
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT * FROM open_spaces ORDER BY borough, name")
+            cur.execute(
+                """
+                SELECT o.*, COALESCE(v.visited, 0) AS visited
+                FROM open_spaces o
+                LEFT JOIN open_space_visits v ON v.open_space_id = o.id AND v.visitor_name = %s
+                ORDER BY o.borough, o.name
+                """,
+                (visitor_name,),
+            )
             return [dict(r) for r in cur.fetchall()]
+
+
+def set_open_space_visited(open_space_id, visitor_name, visited):
+    """Marks (or unmarks) an open space as visited independently of the
+    automated parkrun/trail matches - the red tick. Same partial-upsert
+    pattern as set_visited above.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO open_space_visits (open_space_id, visitor_name, visited, updated_at)
+                VALUES (%s, %s, %s, now())
+                ON CONFLICT (open_space_id, visitor_name) DO UPDATE SET
+                    visited=excluded.visited, updated_at=excluded.updated_at
+                """,
+                (open_space_id, visitor_name, int(visited)),
+            )
 
 
 def max_explored_walk_m(line_id):

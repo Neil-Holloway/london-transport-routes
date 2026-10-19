@@ -5,7 +5,8 @@
 <p class="hint">
   {{ total }} public open spaces over 10 hectares across Greater London.
   <span class="tick tick-parkrun">●</span> parkrun you've run &middot;
-  <span class="tick tick-trail">●</span> London Loop / Capital Ring / Thames Path
+  <span class="tick tick-trail">●</span> London Loop / Capital Ring / Thames Path &middot;
+  <span class="tick tick-visited">●</span> visited independently
 </p>
 
 {% for borough_name, spaces in boroughs %}
@@ -17,10 +18,21 @@
       {{ s.name }}
       {% if s.parkrun_matched %}<span class="tick tick-parkrun" title="You've run {{ s.parkrun_name }} parkrun here">●</span>{% endif %}
       {% if s.trail_matched %}<span class="tick tick-trail" title="{{ s.trails_matched }}">●</span>{% endif %}
+      {% if s.visited %}<span class="tick tick-visited" title="Visited independently">●</span>{% endif %}
     </h3>
     <div class="meta">{{ "%.1f"|format(s.area_m2 / 10000) }} ha</div>
     {% if s.parkrun_matched %}<div class="meta">parkrun: {{ s.parkrun_name }}</div>{% endif %}
     {% if s.trail_matched %}<div class="meta">Trail: {{ s.trails_matched }}</div>{% endif %}
+    <form method="post" action="{{ url_for('toggle_open_space_visited', open_space_id=s.id) }}" class="inline-form">
+      <input type="hidden" name="return_to" value="{{ request.full_path }}">
+      {% if s.visited %}
+        <input type="hidden" name="visited" value="0">
+        <button type="submit">✓ Visited independently (undo)</button>
+      {% else %}
+        <input type="hidden" name="visited" value="1">
+        <button type="submit">Mark visited independently</button>
+      {% endif %}
+    </form>
   </div>
   {% endfor %}
 </div>
@@ -34,5 +46,6 @@
   .tick { font-size: 1rem; }
   .tick-parkrun { color: #2e8b2e; }
   .tick-trail { color: #1a6fd1; }
+  .tick-visited { color: #c0392b; }
 </style>
 {% endblock %}

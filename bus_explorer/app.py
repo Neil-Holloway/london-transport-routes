@@ -519,7 +519,7 @@ def my_visits():
 
 @app.route("/open-spaces")
 def open_spaces():
-    spaces = db.get_open_spaces()
+    spaces = db.get_open_spaces(g.visitor_name)
     boroughs = []
     for space in spaces:
         name = space["borough"] or "Unassigned"
@@ -527,6 +527,18 @@ def open_spaces():
             boroughs.append((name, []))
         boroughs[-1][1].append(space)
     return render_template("open_spaces.html", boroughs=boroughs, total=len(spaces))
+
+
+@app.route("/open-space/<path:open_space_id>/toggle-visited", methods=["POST"])
+def toggle_open_space_visited(open_space_id):
+    """Marks (or unmarks) an open space as visited independently - the red
+    tick - same single-click pattern as toggle_visited above.
+    """
+    visited = request.form.get("visited") == "1"
+    db.set_open_space_visited(open_space_id, g.visitor_name, visited)
+
+    return_to = request.form.get("return_to") or url_for("open_spaces")
+    return redirect(return_to)
 
 
 def main():
