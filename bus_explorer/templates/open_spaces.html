@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Open Spaces — Bus Explorer{% endblock %}
+{% block content %}
+<h1>Open Spaces</h1>
+<p class="hint">
+  {{ total }} public open spaces over 10 hectares across Greater London.
+  <span class="tick tick-parkrun">●</span> parkrun you've run &middot;
+  <span class="tick tick-trail">●</span> London Loop / Capital Ring / Thames Path
+</p>
+
+{% for borough_name, spaces in boroughs %}
+<h2>{{ borough_name }}</h2>
+<div class="result-list">
+  {% for s in spaces %}
+  <div class="card result">
+    <h3>
+      {{ s.name }}
+      {% if s.parkrun_matched %}<span class="tick tick-parkrun" title="You've run {{ s.parkrun_name }} parkrun here">●</span>{% endif %}
+      {% if s.trail_matched %}<span class="tick tick-trail" title="{{ s.trails_matched }}">●</span>{% endif %}
+    </h3>
+    <div class="meta">{{ "%.1f"|format(s.area_m2 / 10000) }} ha</div>
+    {% if s.parkrun_matched %}<div class="meta">parkrun: {{ s.parkrun_name }}</div>{% endif %}
+    {% if s.trail_matched %}<div class="meta">Trail: {{ s.trails_matched }}</div>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p>No open spaces found yet - run build_open_spaces.py to populate this report.</p>
+{% endfor %}
+{% endblock %}
+
+{% block head_extra %}
+<style>
+  .tick { font-size: 1rem; }
+  .tick-parkrun { color: #2e8b2e; }
+  .tick-trail { color: #1a6fd1; }
+</style>
+{% endblock %}

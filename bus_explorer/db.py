@@ -113,6 +113,22 @@ def init_db():
                     updated_at TIMESTAMPTZ DEFAULT now(),
                     PRIMARY KEY (attraction_id, visitor_name)
                 );
+
+                CREATE TABLE IF NOT EXISTS open_spaces (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    osm_type TEXT NOT NULL,
+                    osm_id BIGINT NOT NULL,
+                    lat DOUBLE PRECISION NOT NULL,
+                    lon DOUBLE PRECISION NOT NULL,
+                    area_m2 DOUBLE PRECISION NOT NULL,
+                    borough TEXT,
+                    parkrun_matched BOOLEAN NOT NULL DEFAULT FALSE,
+                    parkrun_name TEXT,
+                    trail_matched BOOLEAN NOT NULL DEFAULT FALSE,
+                    trails_matched TEXT,
+                    updated_at TIMESTAMPTZ DEFAULT now()
+                );
                 """
             )
             # Migration for databases created before the 'address' column existed.
@@ -693,6 +709,49 @@ def get_routes_explored():
         with conn.cursor() as cur:
             cur.execute("SELECT DISTINCT line_id FROM route_attractions")
             return [r["line_id"] for r in cur.fetchall()]
+
+
+def bulk_replace_open_spaces(rows):
+    """Wholesale replace of the open_spaces table - called once at the end
+    of build_open_spaces.py. This is a from-scratch rebuild each time the
+    script is run (not an incremental cache like route_attractions etc.),
+    so TRUNCATE + reinsert is simpler and safer than trying to diff against
+    whatever was there before.
+
+    rows: list of dicts with keys id, name, osm_type, osm_id, lat, lon,
+    area_m2, borough, parkrun_matched, parkrun_name, trail_matched,
+    trails_matched.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE open_spaces")
+        if rows:
+            values = [
+                (
+                    r["id"], r["name"], r["osm_type"], r["osm_id"], r["lat"], r["lon"],
+                    r["area_m2"], r.get("borough"), r.get("parkrun_matched", False),
+                    r.get("parkrun_name"), r.get("trail_matched", False), r.get("trails_matched"),
+                )
+                for r in rows
+            ]
+            with conn.cursor() as cur:
+                psycopg2.extras.execute_values(
+                    cur,
+                    """
+                    INSERT INTO open_spaces
+                        (id, name, osm_type, osm_id, lat, lon, area_m2, borough,
+                         parkrun_matched, parkrun_name, trail_matched, trails_matched)
+                    VALUES %s
+                    """,
+                    values,
+                )
+
+
+def get_open_spaces():
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT * FROM open_spaces ORDER BY borough, name")
+            return [dict(r) for r in cur.fetchall()]
 
 
 def max_explored_walk_m(line_id):

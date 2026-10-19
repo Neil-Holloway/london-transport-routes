@@ -292,6 +292,66 @@ def fetch_areas(refs, timeout_s=30):
     return areas
 
 
+def fetch_geometries(refs, timeout_s=60):
+    """Like fetch_areas, but returns the raw 'out geom' elements themselves
+    rather than reducing them to a single area number - used by
+    build_open_spaces.py, which needs each park's actual boundary ring
+    (see area.element_ring) for parkrun/trail proximity matching, not just
+    its area.
+
+    refs with osm_type "node" are ignored - a node has no boundary.
+    Returns {(osm_type, osm_id): raw_element}; a ref that can't be
+    resolved is simply omitted.
+    """
+    parts = []
+    for osm_type, osm_id in refs:
+        if osm_type == "way":
+            parts.append(f"way({osm_id});")
+        elif osm_type == "relation":
+            parts.append(f"rel({osm_id});")
+    if not parts:
+        return {}
+
+    body = "\n".join(parts)
+    # See _build_query for why the nonce comment is here.
+    query = f"[out:json][timeout:{timeout_s}];\n// nonce:{uuid.uuid4()}\n({body}\n);\nout geom;"
+    elements = _execute(query, rounds=1, timeout=timeout_s + 15, normalise=False)
+    return {(el["type"], el["id"]): el for el in elements}
+
+
+def fetch_trail_relations(names, min_lat, min_lon, max_lat, max_lon, timeout_s=90):
+    """Fetch full line geometry for named long-distance walking route
+    relations (e.g. London Loop, Capital Ring, Thames Path) - used by
+    build_open_spaces.py to determine which open spaces a trail passes
+    through or near (see area.min_distance_point_to_ring_m).
+
+    names is a list of plain route names to match via a case-insensitive
+    regex alternation against the relation's "name" tag - case-insensitive
+    because the London LOOP is tagged in OSM with "LOOP" as an acronym
+    (London Outer Orbital Path) in capitals, not title case. Deliberately
+    not scoped to route=hiking only via a single tag match, since these
+    named routes are occasionally also tagged network=* or just
+    route=foot; any relation whose name matches is included. The bounding
+    box keeps this scoped to
+    Greater London (some of these, e.g. Thames Path, are much longer
+    national trails that continue well beyond it) and, just as importantly,
+    avoids an unbounded global relation search, which public Overpass
+    mirrors are liable to reject or take a very long time to compute.
+
+    Returns a list of raw 'out geom' relation elements (each with a
+    "members" list of way geometries).
+    """
+    pattern = "|".join(names)
+    bbox = f"({min_lat},{min_lon},{max_lat},{max_lon})"
+    query = (
+        f"[out:json][timeout:{timeout_s}];\n"
+        f"// nonce:{uuid.uuid4()}\n"
+        f'relation["name"~"{pattern}",i]["route"~"^(hiking|foot)$"]{bbox};\n'
+        "out geom;"
+    )
+    return _execute(query, rounds=1, timeout=timeout_s + 15, normalise=False)
+
+
 def _normalise_elements(elements):
     out = []
     for el in elements:

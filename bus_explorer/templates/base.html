@@ -16,6 +16,7 @@
       <a href="{{ url_for('by_car') }}">By Car</a>
       <a href="{{ url_for('by_train') }}">By Train</a>
       <a href="{{ url_for('my_visits') }}">My Visits</a>
+      <a href="{{ url_for('open_spaces') }}">Open Spaces</a>
       {% if g.visitor_name %}
         <span class="whoami">Hi, {{ g.visitor_name }} ·
           <a href="{{ url_for('set_name', next=request.full_path) }}">not you?</a>

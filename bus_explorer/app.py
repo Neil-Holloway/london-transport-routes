@@ -517,6 +517,18 @@ def my_visits():
     )
 
 
+@app.route("/open-spaces")
+def open_spaces():
+    spaces = db.get_open_spaces()
+    boroughs = []
+    for space in spaces:
+        name = space["borough"] or "Unassigned"
+        if not boroughs or boroughs[-1][0] != name:
+            boroughs.append((name, []))
+        boroughs[-1][1].append(space)
+    return render_template("open_spaces.html", boroughs=boroughs, total=len(spaces))
+
+
 def main():
     app.run(debug=True, port=5055)
 
