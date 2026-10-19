@@ -495,3 +495,46 @@ def principal_journey(resolved):
     origin = main["stops"][0]["name"]
     destination = main["stops"][-1]["name"]
     return origin, destination
+
+
+def plan_journey(from_lat, from_lon, to_lat, to_lon, date, time, journey_preference="leasttime"):
+    """Queries the TfL Journey Planner for a point-to-point trip at a given
+    date/time - a different TfL endpoint from everything else in this
+    module (which is all about a single bus route's own stops), used by
+    build_open_spaces.py to show a real public-transport route + duration
+    from a fixed starting point to each open space.
+
+    from_lat/from_lon, to_lat/to_lon: raw coordinates, not stop IDs or
+    place names - passing coordinates sidesteps the Journey Planner's
+    text-disambiguation step entirely (only free-text place names trigger
+    it), so every call here resolves straight to an itinerary.
+
+    date: 'YYYYMMDD', time: 'HHMM' (both as the Journey Planner expects).
+
+    Returns {"duration_minutes": int, "legs": [{"mode": str, "instruction": str}]}
+    for the single best (least-time) itinerary, or None if no journey
+    could be found (e.g. genuinely no public transport link at that hour).
+    """
+    path = (
+        f"/Journey/JourneyResults/{from_lat},{from_lon}/to/{to_lat},{to_lon}"
+        f"?date={date}&time={time}&timeIs=Departing&journeyPreference={journey_preference}"
+    )
+    try:
+        data = _fetch_json(path)
+    except RuntimeError:
+        return None
+    if not data:
+        return None
+    journeys = data.get("journeys") or []
+    if not journeys:
+        return None
+
+    best = journeys[0]
+    legs = [
+        {
+            "mode": (leg.get("mode") or {}).get("name", ""),
+            "instruction": (leg.get("instruction") or {}).get("summary", ""),
+        }
+        for leg in best.get("legs", [])
+    ]
+    return {"duration_minutes": best.get("duration"), "legs": legs}

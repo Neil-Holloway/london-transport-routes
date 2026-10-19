@@ -3,9 +3,12 @@
 Builds the Open Spaces report: every public open space (park/garden/nature
 reserve/wood) over 10 hectares in Greater London, with a borough assignment,
 whether it's a parkrun venue Neil has personally run (parkrun_matched),
-and whether the London Loop / Capital Ring / Thames Path passes through or
-near it (trail_matched). Writes the result to the open_spaces table (see
-bus_explorer/db.py), replacing its previous contents entirely.
+whether the London Loop / Capital Ring / Thames Path passes through or
+near it (trail_matched), and a real TfL Journey Planner route + duration
+from Beckenham Junction departing 8am on the soonest Saturday
+(journey_minutes/journey_summary - see match_journeys). Writes the result
+to the open_spaces table (see bus_explorer/db.py), replacing its previous
+contents entirely.
 
 This is a standalone, manually-run script (like fetch_routes.py and
 backfill_websearch.py) - the live app's /open-spaces page just reads
@@ -18,16 +21,20 @@ Usage:
 
 --dry-run runs the whole pipeline and prints summary counts without
 writing anything to the database - use this first to sanity-check numbers
-before touching production data.
+before touching production data. It also skips the Beckenham journey
+lookups (one TfL API call per open space - by far the slowest step),
+since they're not needed to sanity-check candidate/filter counts.
 """
 
 import argparse
 import html
 import json
 import re
+import time
 import urllib.request
+from datetime import date, timedelta
 
-from bus_explorer import area, borough, db, overpass_client
+from bus_explorer import area, borough, db, overpass_client, tfl_client
 from bus_explorer.area_filter import MIN_AREA_M2, filter_by_area
 
 # Covers Greater London with some margin - wide enough that no part of the
@@ -43,6 +50,26 @@ PARKRUN_UK_COUNTRY_CODE = 97
 DEFAULT_PARKRUN_ID = "215124"
 
 USER_AGENT = "Mozilla/5.0 (compatible; BusExplorer open-spaces builder)"
+
+# Beckenham Junction station (rail/tram/bus interchange) - the fixed
+# starting point for every open space's journey time/route. Passed to the
+# Journey Planner as raw coordinates (see tfl_client.plan_journey) rather
+# than a stop ID or the free-text name "Beckenham", which resolves fine
+# but isn't guaranteed to pick this exact station as the start point.
+BECKENHAM_ORIGIN = (51.411175, -0.026016)
+JOURNEY_TIME = "0800"
+JOURNEY_REQUEST_PAUSE_S = 0.3  # be polite to TfL's anonymous rate limit
+
+
+def _next_saturday():
+    """The soonest Saturday from today (today itself, if it already is
+    one) - the Journey Planner needs a real calendar date to apply the
+    right (Saturday) timetable, and re-running the script later should
+    always ask about the *next* Saturday rather than a date that's now in
+    the past.
+    """
+    today = date.today()
+    return today + timedelta(days=(5 - today.weekday()) % 7)
 
 
 def fetch_url(url):
@@ -104,6 +131,8 @@ def build_park_records(candidates):
                 "parkrun_name": None,
                 "trail_matched": False,
                 "trails_matched": set(),
+                "journey_minutes": None,
+                "journey_summary": None,
             }
         )
     return records
@@ -226,6 +255,42 @@ def match_trails(records, trail_points_by_name):
                     break
 
 
+# --- Step 7: journey from Beckenham ----------------------------------------
+
+
+def match_journeys(records, journey_date):
+    """Looks up a real Journey Planner route + duration from
+    BECKENHAM_ORIGIN to each record's centre point, departing at
+    JOURNEY_TIME on journey_date (a Saturday - see _next_saturday). One
+    TfL API call per record, so this is by far the slowest step (400+
+    records); progress is printed periodically and a record that fails
+    just gets a null journey rather than aborting the whole run (e.g.
+    genuinely no public transport link at 8am, or a transient TfL API
+    hiccup).
+    """
+    date_str = journey_date.strftime("%Y%m%d")
+    failures = 0
+    for i, r in enumerate(records, 1):
+        result = tfl_client.plan_journey(
+            BECKENHAM_ORIGIN[0], BECKENHAM_ORIGIN[1], r["lat"], r["lon"],
+            date=date_str, time=JOURNEY_TIME,
+        )
+        if result:
+            r["journey_minutes"] = result["duration_minutes"]
+            r["journey_summary"] = " \u2192 ".join(
+                leg["instruction"] or leg["mode"].replace("-", " ").title() for leg in result["legs"]
+            )
+        else:
+            r["journey_minutes"] = None
+            r["journey_summary"] = None
+            failures += 1
+        if i % 50 == 0 or i == len(records):
+            print(f"  ...{i}/{len(records)} journeys looked up")
+        time.sleep(JOURNEY_REQUEST_PAUSE_S)
+    if failures:
+        print(f"  {failures} open spaces had no journey found (left blank)")
+
+
 # --- main --------------------------------------------------------------
 
 
@@ -282,8 +347,12 @@ def main():
         print(f"  {b}: {count}")
 
     if args.dry_run:
-        print("\n--dry-run: not writing to the database.")
+        print("\n--dry-run: not writing to the database, skipping journey lookups (slowest step).")
         return
+
+    journey_date = _next_saturday()
+    print(f"\nLooking up Saturday 8am journeys from Beckenham ({journey_date.isoformat()})...")
+    match_journeys(records, journey_date)
 
     rows = [
         {
@@ -299,6 +368,8 @@ def main():
             "parkrun_name": r["parkrun_name"],
             "trail_matched": r["trail_matched"],
             "trails_matched": ",".join(sorted(r["trails_matched"])) or None,
+            "journey_minutes": r["journey_minutes"],
+            "journey_summary": r["journey_summary"],
         }
         for r in records
     ]

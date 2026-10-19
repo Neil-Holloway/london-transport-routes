@@ -23,6 +23,7 @@
     <div class="meta">{{ "%.1f"|format(s.area_m2 / 10000) }} ha</div>
     {% if s.parkrun_matched %}<div class="meta">parkrun: {{ s.parkrun_name }}</div>{% endif %}
     {% if s.trail_matched %}<div class="meta">Trail: {{ s.trails_matched }}</div>{% endif %}
+    {% if s.journey_minutes %}<div class="meta">From Beckenham, Sat 8am: {{ s.journey_minutes }} min &middot; {{ s.journey_summary }}</div>{% endif %}
     <form method="post" action="{{ url_for('toggle_open_space_visited', open_space_id=s.id) }}" class="inline-form">
       <input type="hidden" name="return_to" value="{{ url_for('open_spaces') }}#{{ s.id }}">
       {% if s.visited %}

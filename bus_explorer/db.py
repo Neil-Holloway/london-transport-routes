@@ -127,6 +127,8 @@ def init_db():
                     parkrun_name TEXT,
                     trail_matched BOOLEAN NOT NULL DEFAULT FALSE,
                     trails_matched TEXT,
+                    journey_minutes INTEGER,
+                    journey_summary TEXT,
                     updated_at TIMESTAMPTZ DEFAULT now()
                 );
 
@@ -183,6 +185,20 @@ def init_db():
             # Park Walks (routing within a single named park) was removed -
             # drop its cache table from any database created before this.
             cur.execute("DROP TABLE IF EXISTS park_walks")
+
+            # Migration for databases created before the Beckenham
+            # Saturday-8am journey-time columns existed.
+            cur.execute(
+                """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'open_spaces'
+                """
+            )
+            open_space_cols = {row["column_name"] for row in cur.fetchall()}
+            if "journey_minutes" not in open_space_cols:
+                cur.execute("ALTER TABLE open_spaces ADD COLUMN journey_minutes INTEGER")
+            if "journey_summary" not in open_space_cols:
+                cur.execute("ALTER TABLE open_spaces ADD COLUMN journey_summary TEXT")
 
 
 def _run(conn, sql, params):
@@ -733,7 +749,7 @@ def bulk_replace_open_spaces(rows):
 
     rows: list of dicts with keys id, name, osm_type, osm_id, lat, lon,
     area_m2, borough, parkrun_matched, parkrun_name, trail_matched,
-    trails_matched.
+    trails_matched, journey_minutes, journey_summary.
     """
     with get_conn() as conn:
         with conn.cursor() as cur:
@@ -744,6 +760,7 @@ def bulk_replace_open_spaces(rows):
                     r["id"], r["name"], r["osm_type"], r["osm_id"], r["lat"], r["lon"],
                     r["area_m2"], r.get("borough"), r.get("parkrun_matched", False),
                     r.get("parkrun_name"), r.get("trail_matched", False), r.get("trails_matched"),
+                    r.get("journey_minutes"), r.get("journey_summary"),
                 )
                 for r in rows
             ]
@@ -753,7 +770,8 @@ def bulk_replace_open_spaces(rows):
                     """
                     INSERT INTO open_spaces
                         (id, name, osm_type, osm_id, lat, lon, area_m2, borough,
-                         parkrun_matched, parkrun_name, trail_matched, trails_matched)
+                         parkrun_matched, parkrun_name, trail_matched, trails_matched,
+                         journey_minutes, journey_summary)
                     VALUES %s
                     """,
                     values,
