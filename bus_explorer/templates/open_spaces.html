@@ -3,9 +3,9 @@
 {% block content %}
 <h1>Open Spaces</h1>
 <p class="hint">
-  <span class="tick tick-parkrun">●</span> parkrun you've run &middot;
-  <span class="tick tick-trail">●</span> London Loop / Capital Ring / Thames Path &middot;
-  <span class="tick tick-visited">●</span> visited independently
+  <span class="tick tick-parkrun">✓</span> parkrun you've run &middot;
+  <span class="tick tick-trail">✓</span> London Loop / Capital Ring / Thames Path &middot;
+  <span class="tick tick-visited">✓</span> visited independently
 </p>
 <ul class="counts-summary">
   <li>Total: {{ counts.total }}</li>
@@ -33,9 +33,9 @@
   <div class="card result" id="{{ s.id }}">
     <h3>
       {{ s.name }}
-      {% if s.parkrun_matched %}<span class="tick tick-parkrun" title="You've run {{ s.parkrun_name }} parkrun here">●</span>{% endif %}
-      {% if s.trail_matched %}<span class="tick tick-trail" title="{{ s.trails_matched }}">●</span>{% endif %}
-      {% if s.visited %}<span class="tick tick-visited" title="Visited independently">●</span>{% endif %}
+      {% if s.parkrun_matched %}<span class="tick tick-parkrun" title="You've run {{ s.parkrun_name }} parkrun here">✓</span>{% endif %}
+      {% if s.trail_matched %}<span class="tick tick-trail" title="{{ s.trails_matched }}">✓</span>{% endif %}
+      {% if s.visited %}<span class="tick tick-visited" title="Visited independently">✓</span>{% endif %}
       {% if s.deleted %}<span class="ignored-tag">Deleted</span>{% endif %}
     </h3>
     <div class="meta">{{ "%.1f"|format(s.area_m2 / 10000) }} ha</div>

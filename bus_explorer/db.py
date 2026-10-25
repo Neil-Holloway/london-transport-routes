@@ -149,10 +149,12 @@ def init_db():
                 -- The GiGL >10ha checklist (360 London open spaces, source:
                 -- GiGL/GLA "Spaces to Visit 2025"), imported once from a pair
                 -- of static docx exports via import_gigl_parks.py - not a
-                -- live Overpass rebuild like open_spaces above. source_tick
-                -- is the tick colour already recorded in that export
-                -- (parkrun / trail / other) at import time, so it's static
-                -- reference data, not something toggled in the app. Parks
+                -- live Overpass rebuild like open_spaces above. source_ticks
+                -- is the comma-separated tick colour(s) already recorded in
+                -- that export (parkrun / trail / other - a park can carry
+                -- more than one, e.g. a parkrun venue also visited another
+                -- way) at import time, so it's static reference data, not
+                -- something toggled in the app. Parks
                 -- that were unticked at import time additionally carry a
                 -- pre-planned Saturday-morning public transport journey from
                 -- Beckenham (access_method/address/route_summary/etc), so
@@ -164,7 +166,7 @@ def init_db():
                     category TEXT,
                     area_ha DOUBLE PRECISION,
                     access TEXT,
-                    source_tick TEXT,
+                    source_ticks TEXT,
                     access_method TEXT,
                     address TEXT,
                     access_note TEXT,
@@ -899,7 +901,7 @@ def bulk_replace_gigl_parks(rows):
     the source data is re-extracted.
 
     rows: list of dicts with keys id, name, borough, category, area_ha,
-    access, source_tick, access_method, address, access_note, map_url,
+    access, source_ticks, access_method, address, access_note, map_url,
     lat, lon, route_summary, total_time, total_minutes, leave_time,
     arrive_time.
     """
@@ -910,7 +912,7 @@ def bulk_replace_gigl_parks(rows):
             values = [
                 (
                     r["id"], r["name"], r.get("borough"), r.get("category"), r.get("area_ha"),
-                    r.get("access"), r.get("source_tick"), r.get("access_method"), r.get("address"),
+                    r.get("access"), r.get("source_ticks"), r.get("access_method"), r.get("address"),
                     r.get("access_note"), r.get("map_url"), r.get("lat"), r.get("lon"),
                     r.get("route_summary"), r.get("total_time"), r.get("total_minutes"),
                     r.get("leave_time"), r.get("arrive_time"),
@@ -922,7 +924,7 @@ def bulk_replace_gigl_parks(rows):
                     cur,
                     """
                     INSERT INTO gigl_parks
-                        (id, name, borough, category, area_ha, access, source_tick,
+                        (id, name, borough, category, area_ha, access, source_ticks,
                          access_method, address, access_note, map_url, lat, lon,
                          route_summary, total_time, total_minutes, leave_time, arrive_time)
                     VALUES %s
