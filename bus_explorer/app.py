@@ -608,18 +608,14 @@ def parks_visited():
 
     all_parks = db.get_gigl_parks(g.visitor_name)
     for p in all_parks:
-        # A park can carry more than one source tick (e.g. a parkrun venue
-        # also visited another way - see Belair Park) - split into a list
-        # so the template can show one checkmark per matching category.
-        p["source_tick_list"] = (p["source_ticks"] or "").split(",") if p["source_ticks"] else []
-        p["visited"] = bool(p["source_ticks"]) or bool(p["manually_visited"])
+        p["visited"] = bool(p["source_tick"]) or bool(p["manually_visited"])
 
     counts = {
         "total": len(all_parks),
-        "parkrun": sum(1 for p in all_parks if "parkrun" in p["source_tick_list"]),
-        "trail": sum(1 for p in all_parks if "trail" in p["source_tick_list"]),
-        "other": sum(1 for p in all_parks if "other" in p["source_tick_list"]),
-        "manually_visited": sum(1 for p in all_parks if not p["source_ticks"] and p["manually_visited"]),
+        "parkrun": sum(1 for p in all_parks if p["source_tick"] == "parkrun"),
+        "trail": sum(1 for p in all_parks if p["source_tick"] == "trail"),
+        "other": sum(1 for p in all_parks if p["source_tick"] == "other"),
+        "manually_visited": sum(1 for p in all_parks if not p["source_tick"] and p["manually_visited"]),
         "not_visited": sum(1 for p in all_parks if not p["visited"]),
     }
 

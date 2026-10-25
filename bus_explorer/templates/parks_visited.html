@@ -3,7 +3,7 @@
 {% block content %}
 <h1>Parks Visited</h1>
 <p class="hint">
-  The GiGL/GLA checklist of London open spaces over 10ha. A park can carry more than one tick.
+  The GiGL/GLA checklist of London open spaces over 10ha.
   <span class="tick tick-parkrun">✓</span> parkrun you've run &middot;
   <span class="tick tick-trail">✓</span> London Loop / Capital Ring / Thames Path &middot;
   <span class="tick tick-other">✓</span> visited another way &middot;
@@ -34,11 +34,11 @@
     <div class="park-row" id="{{ s.id }}">
       <span class="park-name">{{ s.name }}</span>
       <span class="park-meta">{{ s.category }}{% if s.area_ha %} &middot; {{ "%.1f"|format(s.area_ha) }} ha{% endif %}{% if s.access %} &middot; {{ s.access }}{% endif %}</span>
-      {% if 'parkrun' in s.source_tick_list %}<span class="tick tick-parkrun" title="Parkrun">✓</span>{% endif %}
-      {% if 'trail' in s.source_tick_list %}<span class="tick tick-trail" title="Trail">✓</span>{% endif %}
-      {% if 'other' in s.source_tick_list %}<span class="tick tick-other" title="Visited another way">✓</span>{% endif %}
-      {% if not s.source_ticks and s.manually_visited %}<span class="tick tick-manual" title="Ticked here">✓</span>{% endif %}
-      {% if not s.source_ticks %}
+      {% if s.source_tick == 'parkrun' %}<span class="tick tick-parkrun" title="Parkrun">✓</span>{% endif %}
+      {% if s.source_tick == 'trail' %}<span class="tick tick-trail" title="Trail">✓</span>{% endif %}
+      {% if s.source_tick == 'other' %}<span class="tick tick-other" title="Visited another way">✓</span>{% endif %}
+      {% if not s.source_tick and s.manually_visited %}<span class="tick tick-manual" title="Ticked here">✓</span>{% endif %}
+      {% if not s.source_tick %}
         <form method="post" action="{{ url_for('toggle_gigl_park_visited', gigl_park_id=s.id) }}" class="inline-form">
           <input type="hidden" name="return_to" value="{{ return_to }}#{{ s.id }}">
           {% if s.manually_visited %}

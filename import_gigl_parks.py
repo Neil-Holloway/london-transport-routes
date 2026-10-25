@@ -5,8 +5,9 @@ bus_explorer/db.py). The data itself - data/gigl_parks.json - was extracted
 once from two static docx exports Neil had outside this repo:
 
   - "london-green-spaces-all-visits-ticked.docx": the full 359-site GiGL/GLA
-    "Spaces to Visit 2025" checklist, each site's tick colour(s) recorded
-    (parkrun / trail / other visit / none - a site can carry more than one).
+    "Spaces to Visit 2025" checklist, each site's tick colour recorded
+    (parkrun / trail / other visit / none - the first one recorded, where a
+    site happened to carry more than one).
   - "sorted remaining-parks-saturday-transport-sorted-by-time.docx": for the
     208 sites that were unticked in that checklist, a pre-planned Saturday
     8am public transport journey from Beckenham (BR3 4UE) to each one.
@@ -42,10 +43,10 @@ def main():
     rows = json.loads(DATA_PATH.read_text())
 
     print(f"Loaded {len(rows)} parks from {DATA_PATH}")
-    print(f"  parkrun: {sum(1 for r in rows if 'parkrun' in (r['source_ticks'] or ''))}")
-    print(f"  trail:   {sum(1 for r in rows if 'trail' in (r['source_ticks'] or ''))}")
-    print(f"  other:   {sum(1 for r in rows if 'other' in (r['source_ticks'] or ''))}")
-    print(f"  unticked (with journey plan): {sum(1 for r in rows if not r['source_ticks'])}")
+    print(f"  parkrun: {sum(1 for r in rows if r['source_tick'] == 'parkrun')}")
+    print(f"  trail:   {sum(1 for r in rows if r['source_tick'] == 'trail')}")
+    print(f"  other:   {sum(1 for r in rows if r['source_tick'] == 'other')}")
+    print(f"  unticked (with journey plan): {sum(1 for r in rows if not r['source_tick'])}")
 
     if args.dry_run:
         print("--dry-run: not writing to the database")
