@@ -145,6 +145,53 @@ def init_db():
                     updated_at TIMESTAMPTZ DEFAULT now(),
                     PRIMARY KEY (open_space_id, visitor_name)
                 );
+
+                -- The GiGL >10ha checklist (360 London open spaces, source:
+                -- GiGL/GLA "Spaces to Visit 2025"), imported once from a pair
+                -- of static docx exports via import_gigl_parks.py - not a
+                -- live Overpass rebuild like open_spaces above. source_tick
+                -- is the tick colour already recorded in that export
+                -- (parkrun / trail / other) at import time, so it's static
+                -- reference data, not something toggled in the app. Parks
+                -- that were unticked at import time additionally carry a
+                -- pre-planned Saturday-morning public transport journey from
+                -- Beckenham (access_method/address/route_summary/etc), so
+                -- the "not yet visited" list can show how to get there.
+                CREATE TABLE IF NOT EXISTS gigl_parks (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    borough TEXT,
+                    category TEXT,
+                    area_ha DOUBLE PRECISION,
+                    access TEXT,
+                    source_tick TEXT,
+                    access_method TEXT,
+                    address TEXT,
+                    access_note TEXT,
+                    map_url TEXT,
+                    lat DOUBLE PRECISION,
+                    lon DOUBLE PRECISION,
+                    route_summary TEXT,
+                    total_time TEXT,
+                    total_minutes INTEGER,
+                    leave_time TEXT,
+                    arrive_time TEXT,
+                    updated_at TIMESTAMPTZ DEFAULT now()
+                );
+
+                -- Per-visitor manual tick - lets a visitor mark a park that
+                -- was unticked at import time as now visited (whatever
+                -- colour it would have been; this app only needs a single
+                -- generic tick going forward). Same survives-a-rebuild
+                -- rationale as open_space_visits above, keyed by the stable
+                -- gigl_parks.id.
+                CREATE TABLE IF NOT EXISTS gigl_park_visits (
+                    gigl_park_id TEXT NOT NULL,
+                    visitor_name TEXT NOT NULL,
+                    visited INTEGER NOT NULL DEFAULT 0,
+                    updated_at TIMESTAMPTZ DEFAULT now(),
+                    PRIMARY KEY (gigl_park_id, visitor_name)
+                );
                 """
             )
             # Migration for databases created before the 'address' column existed.
@@ -842,6 +889,77 @@ def set_open_space_deleted(open_space_id, visitor_name, deleted):
                     deleted=excluded.deleted, updated_at=excluded.updated_at
                 """,
                 (open_space_id, visitor_name, int(deleted)),
+            )
+
+
+def bulk_replace_gigl_parks(rows):
+    """Wholesale replace of the gigl_parks table - called by
+    import_gigl_parks.py. This is a one-off load from a static docx export
+    (not a live rebuild), but TRUNCATE + reinsert keeps it re-runnable if
+    the source data is re-extracted.
+
+    rows: list of dicts with keys id, name, borough, category, area_ha,
+    access, source_tick, access_method, address, access_note, map_url,
+    lat, lon, route_summary, total_time, total_minutes, leave_time,
+    arrive_time.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE gigl_parks")
+        if rows:
+            values = [
+                (
+                    r["id"], r["name"], r.get("borough"), r.get("category"), r.get("area_ha"),
+                    r.get("access"), r.get("source_tick"), r.get("access_method"), r.get("address"),
+                    r.get("access_note"), r.get("map_url"), r.get("lat"), r.get("lon"),
+                    r.get("route_summary"), r.get("total_time"), r.get("total_minutes"),
+                    r.get("leave_time"), r.get("arrive_time"),
+                )
+                for r in rows
+            ]
+            with conn.cursor() as cur:
+                psycopg2.extras.execute_values(
+                    cur,
+                    """
+                    INSERT INTO gigl_parks
+                        (id, name, borough, category, area_ha, access, source_tick,
+                         access_method, address, access_note, map_url, lat, lon,
+                         route_summary, total_time, total_minutes, leave_time, arrive_time)
+                    VALUES %s
+                    """,
+                    values,
+                )
+
+
+def get_gigl_parks(visitor_name):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT g.*, COALESCE(v.visited, 0) AS manually_visited
+                FROM gigl_parks g
+                LEFT JOIN gigl_park_visits v ON v.gigl_park_id = g.id AND v.visitor_name = %s
+                ORDER BY g.borough, g.name
+                """,
+                (visitor_name,),
+            )
+            return [dict(r) for r in cur.fetchall()]
+
+
+def set_gigl_park_visited(gigl_park_id, visitor_name, visited):
+    """Marks (or unmarks) a GiGL park as manually visited - same
+    partial-upsert pattern as set_open_space_visited above.
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO gigl_park_visits (gigl_park_id, visitor_name, visited, updated_at)
+                VALUES (%s, %s, %s, now())
+                ON CONFLICT (gigl_park_id, visitor_name) DO UPDATE SET
+                    visited=excluded.visited, updated_at=excluded.updated_at
+                """,
+                (gigl_park_id, visitor_name, int(visited)),
             )
 
 

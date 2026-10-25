@@ -595,6 +595,58 @@ def toggle_open_space_deleted(open_space_id):
     return redirect(return_to)
 
 
+@app.route("/parks-visited")
+def parks_visited():
+    """The GiGL >10ha checklist (see import_gigl_parks.py) - a park counts
+    as visited if it was already ticked at import time (parkrun/trail/other)
+    or has since been manually ticked by this visitor. The "not visited"
+    list carries a pre-planned Saturday journey from Beckenham for each
+    remaining park, sorted quickest-first so it doubles as a "what next"
+    picker; ticking a park there removes it immediately.
+    """
+    view = request.args.get("view", "unvisited")
+
+    all_parks = db.get_gigl_parks(g.visitor_name)
+    for p in all_parks:
+        p["visited"] = bool(p["source_tick"]) or bool(p["manually_visited"])
+
+    counts = {
+        "total": len(all_parks),
+        "parkrun": sum(1 for p in all_parks if p["source_tick"] == "parkrun"),
+        "trail": sum(1 for p in all_parks if p["source_tick"] == "trail"),
+        "other": sum(1 for p in all_parks if p["source_tick"] == "other"),
+        "manually_visited": sum(1 for p in all_parks if not p["source_tick"] and p["manually_visited"]),
+        "not_visited": sum(1 for p in all_parks if not p["visited"]),
+    }
+
+    if view == "borough":
+        boroughs = []
+        for space in all_parks:
+            name = space["borough"] or "Unassigned"
+            if not boroughs or boroughs[-1][0] != name:
+                boroughs.append((name, []))
+            boroughs[-1][1].append(space)
+        return render_template("parks_visited.html", view=view, counts=counts, boroughs=boroughs)
+
+    unvisited = sorted(
+        (p for p in all_parks if not p["visited"]),
+        key=lambda p: (p["total_minutes"] is None, p["total_minutes"]),
+    )
+    return render_template("parks_visited.html", view=view, counts=counts, unvisited=unvisited)
+
+
+@app.route("/gigl-park/<path:gigl_park_id>/toggle-visited", methods=["POST"])
+def toggle_gigl_park_visited(gigl_park_id):
+    """Manually marks (or unmarks) a GiGL park as visited - see
+    db.set_gigl_park_visited.
+    """
+    visited = request.form.get("visited") == "1"
+    db.set_gigl_park_visited(gigl_park_id, g.visitor_name, visited)
+
+    return_to = request.form.get("return_to") or url_for("parks_visited")
+    return redirect(return_to)
+
+
 def main():
     app.run(debug=True, port=5055)
 

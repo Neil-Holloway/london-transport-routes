@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}Parks Visited — Bus Explorer{% endblock %}
+{% block content %}
+<h1>Parks Visited</h1>
+<p class="hint">
+  The GiGL/GLA checklist of London open spaces over 10ha.
+  <span class="tick tick-parkrun">●</span> parkrun you've run &middot;
+  <span class="tick tick-trail">●</span> London Loop / Capital Ring / Thames Path &middot;
+  <span class="tick tick-other">●</span> visited another way &middot;
+  <span class="tick tick-manual">●</span> ticked here
+</p>
+<ul class="counts-summary">
+  <li>Total: {{ counts.total }}</li>
+  <li>Parkrun: {{ counts.parkrun }}</li>
+  <li>Trails: {{ counts.trail }}</li>
+  <li>Other visit: {{ counts.other }}</li>
+  <li>Ticked here: {{ counts.manually_visited }}</li>
+  <li>Not visited: {{ counts.not_visited }}</li>
+</ul>
+<p class="hint">
+  {% if view == 'borough' %}
+    <a href="{{ url_for('parks_visited', view='unvisited') }}">Show not-visited, sorted by journey time</a>
+  {% else %}
+    <a href="{{ url_for('parks_visited', view='borough') }}">Show all parks, grouped by borough</a>
+  {% endif %}
+</p>
+
+{% if view == 'borough' %}
+  {% set return_to = url_for('parks_visited', view='borough') %}
+  {% for borough_name, spaces in boroughs %}
+  <h2>{{ borough_name }}</h2>
+  <div class="result-list">
+    {% for s in spaces %}
+    <div class="card result" id="{{ s.id }}">
+      <h3>
+        {{ s.name }}
+        {% if s.source_tick == 'parkrun' %}<span class="tick tick-parkrun" title="Parkrun">●</span>{% endif %}
+        {% if s.source_tick == 'trail' %}<span class="tick tick-trail" title="Trail">●</span>{% endif %}
+        {% if s.source_tick == 'other' %}<span class="tick tick-other" title="Visited another way">●</span>{% endif %}
+        {% if not s.source_tick and s.manually_visited %}<span class="tick tick-manual" title="Ticked here">●</span>{% endif %}
+      </h3>
+      <div class="meta">{{ s.category }}{% if s.area_ha %} &middot; {{ "%.1f"|format(s.area_ha) }} ha{% endif %}{% if s.access %} &middot; {{ s.access }}{% endif %}</div>
+      {% if not s.source_tick %}
+      <div class="status">
+        <form method="post" action="{{ url_for('toggle_gigl_park_visited', gigl_park_id=s.id) }}" class="inline-form">
+          <input type="hidden" name="return_to" value="{{ return_to }}#{{ s.id }}">
+          {% if s.manually_visited %}
+            <input type="hidden" name="visited" value="0">
+            <button type="submit">✓ Visited (undo)</button>
+          {% else %}
+            <input type="hidden" name="visited" value="1">
+            <button type="submit">Mark visited</button>
+          {% endif %}
+        </form>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p>No parks found yet - run import_gigl_parks.py to populate this report.</p>
+  {% endfor %}
+{% else %}
+  {% if not unvisited %}
+    <p class="hint">Nothing left - every park on the checklist has been visited.</p>
+  {% endif %}
+  <div class="result-list">
+    {% for s in unvisited %}
+    <div class="card result" id="{{ s.id }}">
+      <h3>{{ s.name }}</h3>
+      <div class="meta">{{ s.borough }} &middot; {{ s.category }}{% if s.area_ha %} &middot; {{ "%.1f"|format(s.area_ha) }} ha{% endif %}</div>
+      {% if s.address %}<div class="address">{{ s.address }}{% if s.access_method == 'Approximate' %} (approximate access point){% endif %}</div>{% endif %}
+      {% if s.total_time %}<div class="meta">From Beckenham, Sat 7:30am: {{ s.total_time }} &middot; leave {{ s.leave_time }}, arrive {{ s.arrive_time }}</div>{% endif %}
+      {% if s.route_summary %}<p class="why">{{ s.route_summary }}</p>{% endif %}
+      <div class="status">
+        <form method="post" action="{{ url_for('toggle_gigl_park_visited', gigl_park_id=s.id) }}" class="inline-form">
+          <input type="hidden" name="return_to" value="{{ url_for('parks_visited', view='unvisited') }}">
+          <input type="hidden" name="visited" value="1">
+          <button type="submit">Mark visited</button>
+        </form>
+        {% if s.lat and s.lon %}
+        <button type="button" class="map-toggle" onclick="toggleGiglParkMap('{{ s.id }}', {{ s.lat }}, {{ s.lon }})">Map</button>
+        {% endif %}
+      </div>
+      <div id="map-{{ s.id }}" class="map-container"></div>
+    </div>
+    {% endfor %}
+  </div>
+{% endif %}
+{% endblock %}
+
+{% block head_extra %}
+<style>
+  .tick { font-size: 1rem; }
+  .tick-parkrun { color: #2e8b2e; }
+  .tick-trail { color: #1a6fd1; }
+  .tick-other { color: #c0392b; }
+  .tick-manual { color: #8e44ad; }
+  .map-container { display: none; margin-top: 0.5rem; }
+  .map-container iframe { width: 100%; height: 300px; border: 0; }
+  .counts-summary { list-style: none; display: flex; flex-wrap: wrap; gap: 1rem; padding: 0; margin: 0.5rem 0 1rem; font-size: 0.9em; color: #444; }
+  .counts-summary li { background: #f5f5f5; border-radius: 6px; padding: 4px 10px; }
+</style>
+{% endblock %}
+
+{% block scripts_extra %}
+<script>
+  // Same lazy-load-on-first-click pattern as open_spaces.html's map toggle.
+  // No stored boundary for these parks, just a point, so a fixed-size bbox
+  // is used instead of area-based sizing.
+  function toggleGiglParkMap(id, lat, lon) {
+    var container = document.getElementById('map-' + id);
+    if (!container.dataset.loaded) {
+      var margin = 0.004;
+      var bbox = (lon - margin) + ',' + (lat - margin) + ',' + (lon + margin) + ',' + (lat + margin);
+      var iframe = document.createElement('iframe');
+      iframe.src = 'https://www.openstreetmap.org/export/embed.html?bbox=' + bbox + '&layer=mapnik&marker=' + lat + ',' + lon;
+      container.appendChild(iframe);
+      container.dataset.loaded = '1';
+    }
+    container.style.display = container.style.display === 'block' ? 'none' : 'block';
+  }
+</script>
+{% endblock %}
